@@ -174,6 +174,9 @@ def _get_cache_ttl_waste(days=None, collect_sessions=None):
     rebuild_ttl = {}      # provider key -> profile TTL, used when no split is logged
     candidate_floor = 300  # scan at the shortest TTL; the observed boundary filters later
 
+    if runtime == "claude":
+        from . import native_index  # fork: project every stale transcript in one native pass
+        native_index.warm(files, "turns")
     for filepath in files:
         try:
             turns = parse_fn(filepath)

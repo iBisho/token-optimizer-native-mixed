@@ -1,6 +1,7 @@
 """Definition-only implementations; mutable state belongs to measure."""
 from __future__ import annotations
 from . import _compat, transcript_stream, quality_continuity, upgrade_drain_control
+from . import native_index  # fork: native transcript projections
 
 
 def _find_all_jsonl_files(days=None):
@@ -1017,7 +1018,12 @@ def parse_session_turns(filepath):
     parts_by_key = {}
 
     try:
-        with transcript_stream.open_transcript(filepath) as f:
+        # Fork: read the native "turns" projection when one is fresh; it holds
+        # exactly the lines this loop can act on (see native_index.py).
+        _projected = native_index.resolve(filepath, "turns")
+        _lines = (transcript_stream._raw_lines(open(_projected, "rb")) if _projected is not None
+                  else transcript_stream.open_transcript(filepath))
+        with _lines as f:
             for line in f:
                 if len(line) > _measure_facade.codex_session.MAX_JSONL_LINE_CHARS:
                     continue  # bounded per-line work, same limit as the Codex adapter

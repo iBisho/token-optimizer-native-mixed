@@ -33,8 +33,17 @@ def _epoch(value):
         return None
 
 
+def _source(path):
+    """Fork: the native "nudge" projection when fresh (see native_index.py)."""
+    try:
+        from . import native_index
+        return native_index.source(path, 'nudge')
+    except ImportError:
+        return Path(path)
+
+
 def _rows(path):
-    with Path(path).open(encoding='utf-8', errors='replace') as stream:
+    with _source(path).open(encoding='utf-8', errors='replace') as stream:
         for line in stream:
             try:
                 row = json.loads(line)
@@ -162,7 +171,13 @@ def classify(rows, emitted, new_rows=None):
 def _project_index(directory):
     """Read each transcript once before the database write transaction."""
     transcripts, failures = {}, []
-    for path in Path(directory).glob('*.jsonl'):
+    paths = list(Path(directory).glob('*.jsonl'))
+    try:  # fork: one native pass projects every stale transcript
+        from . import native_index
+        native_index.warm([p for p in paths if not p.is_symlink()], 'nudge')
+    except ImportError:
+        pass
+    for path in paths:
         if path.is_symlink():
             continue
         try:

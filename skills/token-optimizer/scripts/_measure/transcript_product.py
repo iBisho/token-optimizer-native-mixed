@@ -37,14 +37,20 @@ def scan(paths, budget=None, now=None, days=30):
     cutoff = now - timedelta(days=days)
     listing, samples, used, seen_calls = [], {}, set(), set()
     incomplete = False
-    for path in paths:
-        path = Path(path)
+    paths = [Path(p) for p in paths]
+    groups = [[path] + sorted((path.parent / path.stem / 'subagents').glob('*.jsonl')) for path in paths]
+    try:  # fork: one native pass projects every stale transcript (see native_index.py)
+        from . import native_index
+        native_index.warm([f for group in groups for f in group], 'product')
+    except ImportError:
+        native_index = None
+    for path, files in zip(paths, groups):
         tools, instructions = {}, {}
         have_listing = False
-        files = [path] + sorted((path.parent / path.stem / 'subagents').glob('*.jsonl'))
         for source in files:
             try:
-                with source.open(encoding='utf-8', errors='replace') as stream:
+                opened = native_index.source(source, 'product') if native_index else source
+                with opened.open(encoding='utf-8', errors='replace') as stream:
                     for line in stream:
                         if not any(tag in line for tag in ('"tool_use"', '"skill_listing"', '"deferred_tools_delta"', '"mcp_instructions_delta"')):
                             continue

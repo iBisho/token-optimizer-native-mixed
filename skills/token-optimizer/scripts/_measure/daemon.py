@@ -803,6 +803,28 @@ def _windows_start_times_agree(process_start, cim_creation, tolerance_seconds=No
         return False
 
 
+def _native_procs_csv(*view):
+    """Fork: the process table as CSV from the native toidx binary, or None.
+
+    Same columns as the PowerShell pipelines below, read straight from the
+    Win32 API in milliseconds instead of a 1-20 s PowerShell start. None means
+    the binary is missing or failed, and the caller falls back to PowerShell.
+    """
+    _measure_facade = _compat.facade()
+    try:
+        from . import native_index
+        exe = native_index.binary() if native_index.os.environ.get("TOKEN_OPTIMIZER_NATIVE_INDEX", "1") != "0" else None
+        if exe is None:
+            return None
+        result = _measure_facade.subprocess.run(
+            [str(exe), "procs", *view],
+            capture_output=True, text=True, encoding="utf-8", timeout=10, errors="replace", creationflags=_measure_facade._NO_WINDOW,
+        )
+    except (ImportError, _measure_facade.subprocess.SubprocessError, OSError):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
 def _windows_cim_process_details():
     """Return {pid: {"ppid", "path", "cmdline", "creation"}} for claude* processes, or None.
 
@@ -823,16 +845,19 @@ def _windows_cim_process_details():
         "@{N='CreationDate';E={try { $_.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture) } catch { '' }}} | "
         "ConvertTo-Csv -NoTypeInformation"
     )
-    try:
-        result = _measure_facade.subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
-            capture_output=True, text=True, encoding="utf-8", timeout=10, errors="replace", creationflags=_measure_facade._NO_WINDOW,
-        )
-    except (_measure_facade.subprocess.SubprocessError, OSError, FileNotFoundError):
-        return None
-    if result.returncode != 0:
-        return None
-    rows = _measure_facade._read_strict_csv(result.stdout, ("ProcessId", "ParentProcessId", "ExecutablePath", "CommandLine", "CreationDate"))
+    stdout = _native_procs_csv("cim", "claude")
+    if stdout is None:
+        try:
+            result = _measure_facade.subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+                capture_output=True, text=True, encoding="utf-8", timeout=10, errors="replace", creationflags=_measure_facade._NO_WINDOW,
+            )
+        except (_measure_facade.subprocess.SubprocessError, OSError, FileNotFoundError):
+            return None
+        if result.returncode != 0:
+            return None
+        stdout = result.stdout
+    rows = _measure_facade._read_strict_csv(stdout, ("ProcessId", "ParentProcessId", "ExecutablePath", "CommandLine", "CreationDate"))
     if rows is None:
         return None
     details = {}
@@ -870,16 +895,19 @@ def _windows_process_names():
         "Select-Object ProcessId, ParentProcessId, Name | "
         "ConvertTo-Csv -NoTypeInformation"
     )
-    try:
-        result = _measure_facade.subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
-            capture_output=True, text=True, encoding="utf-8", timeout=10, errors="replace", creationflags=_measure_facade._NO_WINDOW,
-        )
-    except (_measure_facade.subprocess.SubprocessError, OSError, FileNotFoundError):
-        return None
-    if result.returncode != 0:
-        return None
-    rows = _measure_facade._read_strict_csv(result.stdout, ("ProcessId", "ParentProcessId", "Name"))
+    stdout = _native_procs_csv("names")
+    if stdout is None:
+        try:
+            result = _measure_facade.subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+                capture_output=True, text=True, encoding="utf-8", timeout=10, errors="replace", creationflags=_measure_facade._NO_WINDOW,
+            )
+        except (_measure_facade.subprocess.SubprocessError, OSError, FileNotFoundError):
+            return None
+        if result.returncode != 0:
+            return None
+        stdout = result.stdout
+    rows = _measure_facade._read_strict_csv(stdout, ("ProcessId", "ParentProcessId", "Name"))
     if rows is None:
         return None
     names = {}
@@ -1216,20 +1244,23 @@ def _collect_windows_claude_sessions(process_name=None, creation_fallback=None):
         "@{N='StartTime';E={try { $_.StartTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture) } catch { '' }}} | "
         "ConvertTo-Csv -NoTypeInformation"
     )
-    try:
-        result = _measure_facade.subprocess.run(
-            # -ExecutionPolicy Bypass so a locked-down host (AllSigned policy)
-            # can still run this inline -Command (tasklist needed no policy).
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
-            capture_output=True, text=True, timeout=10, errors="replace", creationflags=_measure_facade._NO_WINDOW,
-        )
-    except (_measure_facade.subprocess.SubprocessError, OSError, FileNotFoundError):
-        return sessions
-    if result.returncode != 0:
-        return sessions
+    stdout = _native_procs_csv("get-process", process_name)
+    if stdout is None:
+        try:
+            result = _measure_facade.subprocess.run(
+                # -ExecutionPolicy Bypass so a locked-down host (AllSigned policy)
+                # can still run this inline -Command (tasklist needed no policy).
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+                capture_output=True, text=True, timeout=10, errors="replace", creationflags=_measure_facade._NO_WINDOW,
+            )
+        except (_measure_facade.subprocess.SubprocessError, OSError, FileNotFoundError):
+            return sessions
+        if result.returncode != 0:
+            return sessions
+        stdout = result.stdout
 
     try:
-        reader = list(_csv.DictReader(_io.StringIO(result.stdout)))
+        reader = list(_csv.DictReader(_io.StringIO(stdout)))
     except (_csv.Error, ValueError):
         return sessions
 
