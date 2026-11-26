@@ -1,12 +1,12 @@
 {
   "assets": {
-    "toidx-darwin-amd64": "6ecc696820dd7550cda5478ec9b728be2b35bccac734e49a6bb62951eef9cb68",
-    "toidx-darwin-arm64": "d6dd78b922e363f750c5d6f6636dbad2e490773c2eeecb12d390c29c342c85e5",
-    "toidx-linux-amd64": "8d9d60bf51d67351886c45371a3b5af4721086c92f708187eb51859146048830",
-    "toidx-linux-arm64": "64b8eb91f1b1b600522d284acee5e950b9626322dfa644b18158b4d4c2b7bddf",
-    "toidx-windows-amd64.exe": "60d7c71e085780caf1a3764b121d24dfa4b48710189a244c5d6e83e285642d92",
-    "toidx-windows-arm64.exe": "929691f83b527e28cc32f8aa9c50fd845ece281e0dc74418ab025e9a2eafcee6"
+    "toidx-darwin-amd64": "8bfd51279b367eec03007c830ba3007777fbb97bb7114f158c996fe323ef552d",
+    "toidx-darwin-arm64": "6819facbd1c5281ae82396b3ef9338cc3d0c4c097b4cc2a225cd17238f44e5cc",
+    "toidx-linux-amd64": "a8cedf5a53e398708d0d64e1d168bd7c0b376960a7c1745150494c43ef9e2670",
+    "toidx-linux-arm64": "429378eba69a6ee3bb58ad7f4706d79c4ca5d94419fa2b13a7ad0fbcf747dc64",
+    "toidx-windows-amd64.exe": "19fab9125bb6664630f5e14d4a9033324c43e37108fe02281ceed636210a74c4",
+    "toidx-windows-arm64.exe": "cfe88d4cf881935ad8f5bd48d097d11cedfc22b851d42c3f2358128979d96c62"
   },
-  "source": "c2d52e78701de8c179ee5676fde80cfb991521f0b75961985b4ea8a0eeb38776",
-  "tag": "toidx-c2d52e78701d"
+  "source": "6888306769eacfcbd8ee7dce4d187e913fdba56ce5c1fd8e17e3caa4db0d80bc",
+  "tag": "toidx-6888306769ea"
 }
