@@ -23,7 +23,7 @@ identical to the original's (checked by equivalence tests, see
 
 **What changed.**
 
-- A small Go binary, `toidx` (prebuilt for Windows, macOS and Linux in `native/bin`),
+- A small Go binary, `toidx` (released for Windows, macOS and Linux, amd64 and arm64),
   reads each transcript once and keeps a compact projection per reader; only changed
   transcripts are re-read.
 - The per-session parsers (`parse_session_turns`, `_parse_session_jsonl`) and the
@@ -108,8 +108,12 @@ Then in Claude Code: `/token-optimizer`
 
 > **Coming from the original plugin?** Uninstall it first (`/plugin uninstall token-optimizer@alexgreensh-token-optimizer`) so the two do not run the same hooks twice. Its data lives in `~/.claude/plugins/data/token-optimizer-alexgreensh-token-optimizer`; copy that folder to `token-optimizer-token-optimizer-native-mixed` to keep your history and savings ledger.
 
-The native binary needs no setup: the plugin picks the one for your OS from
-`native/bin`. To build it yourself, see [native/README.md](native/README.md).
+The native binary needs no setup. The first time the plugin needs it, it
+downloads the one for your OS and CPU from this repo's GitHub releases in the
+background and checks its SHA-256 against the hash committed in
+`native/toidx.lock.json`; until then (or with
+`TOKEN_OPTIMIZER_NATIVE_DOWNLOAD=0`) the Python paths run, with the same
+results. See [PRIVACY.md](PRIVACY.md) and [native/README.md](native/README.md).
 
 <details>
 <summary>Uninstall</summary>

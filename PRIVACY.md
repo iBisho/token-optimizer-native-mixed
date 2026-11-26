@@ -6,6 +6,7 @@
 
 - **No telemetry**: No usage data, analytics, or metrics are sent anywhere.
 - **No runtime network calls**: Zero outbound network requests during normal operation. The only network activity at runtime is a loopback-only (127.0.0.1) dashboard server for local visualization. Install and update checks contact GitHub (`api.github.com`) to verify release integrity; no product data is sent.
+- **One native binary download** (this edition): the first time the plugin needs its native helper (`toidx`) after an install or update, it downloads that one file for your OS from this repository's GitHub releases (`github.com/iBisho/token-optimizer-native-mixed/releases`), in the background, and installs it only if its SHA-256 matches the hash committed in `native/toidx.lock.json`. Nothing about you or your sessions is sent; it is a plain file download. Set `TOKEN_OPTIMIZER_NATIVE_DOWNLOAD=0` to turn it off (the plugin then runs its Python paths, slower, same results).
 - **No third-party services**: No external APIs, tracking pixels, or data processors.
 - **No accounts required**: No sign-up, login, or registration.
 

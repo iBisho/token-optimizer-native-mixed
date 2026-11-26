@@ -1,8 +1,8 @@
 name: Native
 
 # Checks that the toidx sources (native/toidx) format, vet, build and run on
-# the three desktop platforms. The shipped binaries are built locally and
-# committed in native/bin (native/README.md, "Build"). The Python tests that
+# the three desktop platforms. The shipped binaries come from
+# native-release.yml (native/README.md, "Distribution"). The Python tests that
 # compare the native paths against upstream need a real transcript history,
 # so they run locally (native/README.md, "Verify").
 on:

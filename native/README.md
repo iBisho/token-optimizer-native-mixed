@@ -125,8 +125,35 @@ unchanged.
 - `TOKEN_OPTIMIZER_NATIVE_INDEX=0` disables every native path.
 - `TOKEN_OPTIMIZER_NATIVE_COMPUTE=0` disables only the native parsers.
 - `TOKEN_OPTIMIZER_TOIDX=<path>` points at a binary elsewhere.
+- `TOKEN_OPTIMIZER_NATIVE_DOWNLOAD=0` never downloads the release binary.
 
-## Build
+## Distribution
+
+No binary is committed. `native_index.binary()` uses, in order:
+
+1. `TOKEN_OPTIMIZER_TOIDX`, if set.
+2. A local build, `native/bin/toidx.exe` or `native/bin/toidx` (git-ignored).
+3. The release binary pinned by `native/toidx.lock.json`, from
+   `<plugin data>/toidx/bin/<tag>/<asset>`.
+
+When 3 is missing, the plugin starts `scripts/toidx_fetch.py` detached and
+keeps running its Python paths. The fetcher downloads
+`https://github.com/iBisho/token-optimizer-native-mixed/releases/download/<tag>/<asset>`
+and installs it only if its SHA-256 equals the one in the lock file; after a
+failure it waits a day before trying again.
+
+The lock also holds a digest of the Go sources (`native_index.source_digest()`:
+`native/toidx/*.go`, `go.mod`, `go.sum`, line endings normalized). A
+downloaded binary is used only while that digest matches the sources the
+plugin ships, so a binary built from other code never runs, even in the
+minutes between a Go change and its release.
+
+Releases are automatic: `.github/workflows/native-release.yml` runs when
+`native/toidx/**` changes on main. It names the release `toidx-<digest[:12]>`,
+cross-compiles six binaries (Windows, Linux and macOS; amd64 and arm64),
+attaches them with `SHA256SUMS`, and commits the new lock file to main.
+
+## Build (local)
 
 Requires Go 1.24+ (see `go.mod`); `go build` fetches fastjson, pinned in
 `go.sum`. From the repo root:
@@ -135,18 +162,8 @@ Requires Go 1.24+ (see `go.mod`); `go build` fetches fastjson, pinned in
 cd native/toidx; go build -trimpath -ldflags="-s -w" -o ../bin/toidx.exe .
 ```
 
-`native/bin/` is committed, so the installed plugin needs no Go toolchain:
-`toidx.exe` (Windows) and `toidx-<linux|darwin>-<amd64|arm64>`. The Python
-side (`native_index.binary()`) picks the one for the running OS and CPU; a
-local build named `native/bin/toidx` wins on macOS/Linux. After changing the
-Go code, rebuild all five from Windows (PowerShell, from `native/toidx`):
-
-```powershell
-go build -trimpath -ldflags="-s -w" -o ../bin/toidx.exe .; foreach ($t in "linux/amd64","linux/arm64","darwin/amd64","darwin/arm64") { $o, $a = $t.Split("/"); $env:GOOS = $o; $env:GOARCH = $a; go build -trimpath -ldflags="-s -w" -o "../bin/toidx-$o-$a" . }; Remove-Item Env:GOOS, Env:GOARCH
-```
-
-New macOS/Linux files need the executable bit in git:
-`git update-index --chmod=+x native/bin/toidx-*`.
+On macOS/Linux build `../bin/toidx`. A local build always wins over the
+release binary.
 
 ## Verify
 
@@ -174,7 +191,10 @@ between the two reads; the tests retry those.
 Native layer:
 
 - `native/` (new): Go source, binary, tests, this README.
-- `_measure/native_index.py` (new): projection cache client.
+- `_measure/native_index.py` (new): projection cache client, binary lookup
+  and download trigger.
+- `scripts/toidx_fetch.py` (new): hash-checked release download.
+- `PRIVACY.md`: the one network request (the binary download).
 - `_measure/native_compute.py` (new): native parser client (context, jobs, results).
 - `_measure/sessions.py`: both parsers return prepared native results; their
   Python paths read the `turns` / `session` projections.
@@ -198,6 +218,7 @@ Packaging (Claude Code only):
 - `README.md`: this edition's header, install and credits.
 - `.github/workflows/`: `tests.yml` (pytest on Linux and Windows),
   `native.yml` (gofmt, vet and build of `toidx` on the three platforms),
+  `native-release.yml` (releases the binaries and pins them),
   `refresh-prices.yml` (daily price refresh as a review PR),
   `file-size.yml` (upstream's line limit).
 - `scripts/refresh_prices.py`: writes only `prices.json`.

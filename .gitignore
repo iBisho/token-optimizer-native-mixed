@@ -57,3 +57,7 @@ tr-probe-out/
 
 # Local scratch folders from test and review runs
 .scratch*/
+
+# Local toidx builds; users get release binaries (native/toidx.lock.json)
+native/bin/
+native/toidx/dist/

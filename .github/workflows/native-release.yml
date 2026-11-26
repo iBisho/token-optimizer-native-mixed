@@ -1,0 +1,103 @@
+name: Native release
+
+# Publishes the toidx binaries the plugin downloads (native/README.md,
+# "Distribution"). Runs when the Go sources change on main, or by hand.
+#
+# 1. Hash the Go sources (native_index.source_digest); the release tag is
+#    toidx-<first 12 hex digits>, so the same sources never publish twice.
+# 2. Cross-compile the six binaries (CGO off, -trimpath) and record their
+#    SHA-256.
+# 3. Create the GitHub release with the binaries attached.
+# 4. Commit native/toidx.lock.json (tag, source digest, asset hashes) to
+#    main. The plugin trusts only the hashes in that committed file and only
+#    when its source digest matches the sources it ships.
+on:
+  push:
+    branches: [main]
+    paths: ['native/toidx/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: native-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: native/toidx/go.mod
+          cache-dependency-path: native/toidx/go.sum
+
+      - name: Source digest and tag
+        id: meta
+        run: |
+          digest=$(python -c "import sys; sys.path.insert(0, 'skills/token-optimizer/scripts'); from _measure.native_index import source_digest; print(source_digest('.'))")
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "tag=toidx-${digest:0:12}" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if already released
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Vet and build
+        if: steps.exists.outputs.released == 'false'
+        working-directory: native/toidx
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          mkdir -p dist
+          for t in windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os=${t%/*}; arch=${t#*/}; ext=""; [ "$os" = windows ] && ext=".exe"
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "dist/toidx-$os-$arch$ext" .
+          done
+          test "$(GOOS= GOARCH= go run . version)" -ge 1
+
+      - name: Publish release
+        if: steps.exists.outputs.released == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd native/toidx/dist
+          sha256sum toidx-* > SHA256SUMS
+          gh release create "${{ steps.meta.outputs.tag }}" toidx-* SHA256SUMS \
+            --target "$GITHUB_SHA" --title "${{ steps.meta.outputs.tag }}" \
+            --notes "toidx built from native/toidx at $GITHUB_SHA (source digest ${{ steps.meta.outputs.digest }})."
+
+      - name: Pin the release in native/toidx.lock.json
+        if: steps.exists.outputs.released == 'false'
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          dist = pathlib.Path("native/toidx/dist")
+          assets = {}
+          for line in (dist / "SHA256SUMS").read_text().splitlines():
+              sha, name = line.split()
+              assets[name] = sha
+          lock = {"tag": "${{ steps.meta.outputs.tag }}", "source": "${{ steps.meta.outputs.digest }}", "assets": assets}
+          pathlib.Path("native/toidx.lock.json").write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add native/toidx.lock.json
+          git commit -m "chore(native): pin ${{ steps.meta.outputs.tag }}"
+          git pull --rebase origin main
+          git push origin HEAD:main

@@ -36,25 +36,112 @@ def enabled():
     return os.environ.get(_DISABLE_ENV, "1") != "0" and binary() is not None
 
 
+_DOWNLOAD_ENV = "TOKEN_OPTIMIZER_NATIVE_DOWNLOAD"
+_FOUND = {}  # memo: "binary" -> Path once found in this process
+_FETCH_STARTED = set()
+
+
+def _repo_root():
+    return Path(__file__).resolve().parents[4]
+
+
+def _asset():
+    """Release asset name for this OS and CPU, e.g. toidx-linux-arm64."""
+    if sys.platform == "win32":
+        machine = os.environ.get("PROCESSOR_ARCHITEW6432") or os.environ.get("PROCESSOR_ARCHITECTURE", "")
+        osname, ext = "windows", ".exe"
+    else:
+        machine = os.uname().machine  # platform.machine() can be slow; this is the same value
+        osname = "darwin" if sys.platform == "darwin" else "linux" if sys.platform.startswith("linux") else None
+        ext = ""
+    arch = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(machine.lower())
+    return f"toidx-{osname}-{arch}{ext}" if osname and arch else None
+
+
+def _executable(path):
+    return path.is_file() and (sys.platform == "win32" or os.access(path, os.X_OK))
+
+
+def source_digest(root=None):
+    """SHA-256 over the Go sources (native/toidx: *.go, go.mod, go.sum),
+    line endings normalized. The release workflow records it in the lock
+    file; a downloaded binary is used only when it matches the installed
+    sources, so a binary built from other code never runs."""
+    src = Path(root or _repo_root()) / "native" / "toidx"
+    files = sorted([p for p in src.glob("*.go")] + [src / "go.mod", src / "go.sum"], key=lambda p: p.name)
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(path.name.encode("utf-8") + b"\0")
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n") + b"\0")
+    return digest.hexdigest()
+
+
+def _locked():
+    """(release tag, sha256, asset) of this platform's binary from
+    native/toidx.lock.json, when the lock matches the installed sources."""
+    import json
+    try:
+        lock = json.loads((_repo_root() / "native" / "toidx.lock.json").read_text(encoding="utf-8"))
+        asset = _asset()
+        if lock["source"] != source_digest():
+            return None
+        return lock["tag"], lock["assets"][asset], asset
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _downloaded():
+    """The pinned release binary from the plugin data folder; starts a
+    background download (hash-checked) when it is not there yet."""
+    pinned = _locked()
+    if pinned is None:
+        return None
+    tag, sha256, asset = pinned
+    try:
+        dest = _cache_root() / "bin" / tag / asset
+    except Exception:
+        return None
+    if _executable(dest):
+        return dest
+    if os.environ.get(_DOWNLOAD_ENV, "1") == "0" or dest in _FETCH_STARTED:
+        return None
+    _FETCH_STARTED.add(dest)
+    try:
+        import time
+        failed = Path(str(dest) + ".failed")
+        if failed.is_file() and time.time() - failed.stat().st_mtime < 86400:
+            return None  # retried once a day at most
+        from spawn_utils import spawn_detached
+        url = f"https://github.com/{_RELEASE_REPO}/releases/download/{tag}/{asset}"
+        script = Path(__file__).resolve().parents[1] / "toidx_fetch.py"
+        spawn_detached([sys.executable, str(script), url, str(dest), sha256],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+    return None
+
+
+_RELEASE_REPO = "iBisho/token-optimizer-native-mixed"
+
+
 def binary():
+    """The toidx binary to run, or None (the Python paths are used).
+
+    In order: TOKEN_OPTIMIZER_TOIDX, a local build in native/bin
+    (toidx.exe / toidx, git-ignored), then the release binary pinned by
+    native/toidx.lock.json, downloaded once into the plugin data folder.
+    """
     override = os.environ.get(_BINARY_ENV)
     if override:
         return Path(override) if Path(override).is_file() else None
-    bindir = Path(__file__).resolve().parents[4] / "native" / "bin"
-    if sys.platform == "win32":
-        names = ["toidx.exe"]
-    else:
-        import platform
-        arch = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine().lower())
-        osname = "darwin" if sys.platform == "darwin" else "linux" if sys.platform.startswith("linux") else None
-        names = ["toidx"]  # a local build wins over the committed one
-        if arch and osname:
-            names.append(f"toidx-{osname}-{arch}")
-    for name in names:
-        candidate = bindir / name
-        if candidate.is_file() and (sys.platform == "win32" or os.access(candidate, os.X_OK)):
-            return candidate
-    return None
+    found = _FOUND.get("binary")
+    if found is not None:
+        return found
+    local = _repo_root() / "native" / "bin" / ("toidx.exe" if sys.platform == "win32" else "toidx")
+    found = local if _executable(local) else _downloaded()
+    if found is not None:
+        _FOUND["binary"] = found
+    return found
 
 
 def _key(path):

@@ -28,6 +28,9 @@ Dockerfile text eol=lf
 Dockerfile.* text eol=lf
 Makefile text eol=lf
 Makefile.* text eol=lf
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
 # Extension-less text files that ship in the repo.
 LICENSE text eol=lf
 .gitignore text eol=lf
