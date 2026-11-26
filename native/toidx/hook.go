@@ -790,6 +790,10 @@ func runHook(args []string) int {
 		return 0 // run.py: nothing to dispatch
 	}
 	plan := planHook(args[0], args[1], args[2:])
+	if trace := os.Getenv("TOIDX_HOOK_TRACE"); trace != "" {
+		// Test hook (native/tests/hook_equivalence.py): which path was taken.
+		_ = os.WriteFile(trace, []byte([]string{"medium", "exit", "fast"}[plan.kind]+"\n"), 0o600)
+	}
 	switch plan.kind {
 	case planExit:
 		return 0

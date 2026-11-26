@@ -57,7 +57,9 @@ def run(cmd, env, out):
 
 def main():
     toidx = Path(sys.argv[1]).resolve()
-    base = Path(tempfile.mkdtemp())
+    # resolve(): long form, since runners put TEMP under an 8.3 short name and
+    # toidx defers to run.py (medium path) for any path that resolving changes.
+    base = Path(tempfile.mkdtemp()).resolve()
     root = build_root(base)
     home = base / "home"
     (home / ".claude" / "token-optimizer").mkdir(parents=True)
@@ -66,27 +68,29 @@ def main():
     out = base / "probe.json"
     clean = {k: v for k, v in os.environ.items()
              if not k.startswith(("TOKEN_OPTIMIZER", "CLAUDE", "PYTHON", "CODEX"))}
+    trace = base / "trace.txt"
     clean.update(USERPROFILE=str(home), HOME=str(home), CLAUDE_PLUGIN_ROOT=str(root), PROBE_OUT=str(out),
-                 TOKEN_OPTIMIZER_NO_PROC_SCAN="1")
+                 TOKEN_OPTIMIZER_NO_PROC_SCAN="1", TOIDX_HOOK_TRACE=str(trace))
     record(home, clean)
 
+    # (name, setup, args, path toidx must take)
     scenarios = [
-        ("no config", lambda: None, ["hooks/probe_runner.py", "a", "b"]),
-        ("consent given", lambda: cfg.write_text('{"enterprise_consent_shown": true}'), ["hooks/probe_runner.py"]),
+        ("no config", lambda: None, ["hooks/probe_runner.py", "a", "b"], "fast"),
+        ("consent given", lambda: cfg.write_text('{"enterprise_consent_shown": true}'), ["hooks/probe_runner.py"], "fast"),
         ("opted out", lambda: cfg.write_text('{"enterprise_consent_shown": false, "v5_welcome_shown": false}'),
-         ["hooks/probe_runner.py"]),
-        ("opted out, exempt arg", None, ["hooks/probe_runner.py", "consent"]),
-        ("backfill", lambda: cfg.write_text('{"v5_welcome_shown": true}'), ["hooks/probe_runner.py"]),
+         ["hooks/probe_runner.py"], "exit"),
+        ("opted out, exempt arg", None, ["hooks/probe_runner.py", "consent"], "fast"),
+        ("backfill", lambda: cfg.write_text('{"v5_welcome_shown": true}'), ["hooks/probe_runner.py"], "medium"),
         ("disabled", lambda: settings.write_text(
-            '{"enabledPlugins": {"token-optimizer@token-optimizer-native-mixed": false}}'), ["hooks/probe_runner.py"]),
-        ("enabled again", lambda: settings.write_text('{"enabledPlugins": {}}'), ["hooks/probe_runner.py"]),
-        ("session-end-flush", None, ["hooks/probe_runner.py", "session-end-flush"]),
-        ("missing target", None, ["hooks/nope.py"]),
-        ("traversal", None, ["../x.py"]),
-        ("git work tree", lambda: (base / ".git").mkdir(), ["hooks/probe_runner.py"]),
+            '{"enabledPlugins": {"token-optimizer@token-optimizer-native-mixed": false}}'), ["hooks/probe_runner.py"], "exit"),
+        ("enabled again", lambda: settings.write_text('{"enabledPlugins": {}}'), ["hooks/probe_runner.py"], "fast"),
+        ("session-end-flush", None, ["hooks/probe_runner.py", "session-end-flush"], "fast"),
+        ("missing target", None, ["hooks/nope.py"], "exit"),
+        ("traversal", None, ["../x.py"], "exit"),
+        ("git work tree", lambda: (base / ".git").mkdir(), ["hooks/probe_runner.py"], "fast"),
     ]
     failures = 0
-    for name, setup, args in scenarios:
+    for name, setup, args, expected_path in scenarios:
         if setup:
             setup()
         if name == "backfill":
@@ -96,10 +100,14 @@ def main():
         else:
             a = run([sys.executable, str(root / "hooks" / "run.py"), *args], clean, out)
         b = run([str(toidx), "hook", str(root / "hooks" / "run.py"), *args], clean, out)
-        same = a == b
+        taken = trace.read_text().strip() if trace.exists() else "?"
+        if trace.exists():
+            trace.unlink()
+        same = a == b and taken == expected_path
         failures += not same
-        print(f"{'ok  ' if same else 'DIFF'} {name}: ran={a[2] is not None}")
+        print(f"{'ok  ' if same else 'DIFF'} {name}: ran={a[2] is not None} path={taken}")
         if not same:
+            print("   expected path:", expected_path)
             print("   run.py:", a)
             print("   toidx :", b)
     # stale CLAUDE_PLUGIN_ROOT

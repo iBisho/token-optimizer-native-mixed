@@ -12,7 +12,13 @@ import (
 // manifests and a scripts dir, and a clean home. Returns (root, home).
 func fakePlugin(t *testing.T) (string, string) {
 	t.Helper()
-	base := t.TempDir()
+	// Long form: CI runners put TEMP under an 8.3 short name
+	// (C:\Users\RUNNER~1\...), which hook.go treats as "path changes when
+	// resolved" and defers to run.py.
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	root := filepath.Join(base, "plugin")
 	home := filepath.Join(base, "home")
 	for _, d := range []string{
