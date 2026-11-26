@@ -31,10 +31,6 @@ REPO = Path(__file__).resolve().parent.parent
 # a README whose substantive structure has been removed.
 MIN_LINES = {
     "README.md": 400,
-    "openclaw/README.md": 60,
-    "opencode/README.md": 40,
-    "hermes/README.md": 40,
-    "antigravity/README.md": 40,
 }
 
 # Substrings that preserve required licensing and attribution information.

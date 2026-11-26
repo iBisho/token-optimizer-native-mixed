@@ -95,12 +95,9 @@ def _exe_name(argv) -> str:
     return base
 
 
-# Every hooks.json a host loads: the plugin, its Codex-marketplace mirror and
-# the Cowork copy (Cowork runs a different event set, so it is checked as is).
+# Every hooks.json a host loads: the Claude Code plugin's.
 SHIPPED_HOOKS_JSON = [
     HOOKS / "hooks.json",
-    REPO / "plugins" / "token-optimizer" / "hooks" / "hooks.json",
-    REPO / "cowork" / "token-optimizer" / "hooks" / "hooks.json",
 ]
 
 

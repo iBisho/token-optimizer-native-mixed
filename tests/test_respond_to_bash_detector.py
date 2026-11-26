@@ -109,13 +109,6 @@ def test_registry_integration():
     assert out["single_copy"], "config finding must be deduped to one copy"
 
 
-def test_dual_tree_parity_detector():
-    canonical = SCRIPTS / "detectors" / "respond_to_bash.py"
-    mirror = REPO / "plugins" / "token-optimizer" / "skills" / "token-optimizer" / "scripts" / "detectors" / "respond_to_bash.py"
-    assert canonical.read_bytes() == mirror.read_bytes(), \
-        "respond_to_bash.py drift between skills/ and plugins/ — run the sync"
-
-
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0

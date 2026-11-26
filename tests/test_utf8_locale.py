@@ -20,8 +20,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-SCRIPTS = REPO / "plugins" / "token-optimizer" / "skills" / "token-optimizer" / "scripts"
-RUN_PY = REPO / "plugins" / "token-optimizer" / "hooks" / "run.py"
+SCRIPTS = REPO / "skills" / "token-optimizer" / "scripts"
+RUN_PY = REPO / "hooks" / "run.py"
 
 HEB = "/Users/x/פרויקט-שלי"  # "my project" in Hebrew
 # The same string escaped to pure-ASCII source (\uXXXX), for embedding in a

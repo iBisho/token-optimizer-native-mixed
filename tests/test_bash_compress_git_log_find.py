@@ -1,6 +1,5 @@
 """git log and find summarizers (5.13.46): savings, exact preservation, passthrough."""
 import hashlib
-import os
 import re
 import shlex
 import sys
@@ -398,30 +397,3 @@ def test_errors_still_pass_raw():
     raw = '\n'.join(_find_paths()) + '\n'
     assert bc.compress('find . -type f', raw, returncode=1) == raw
     assert bc.compress('find . -type f', raw, stderr='error: something failed') == raw
-
-
-# ---------------------------------------------------------------- Devin automatic path
-
-@pytest.mark.skipif(os.name != 'posix', reason='Devin adapter is POSIX only')
-@pytest.mark.parametrize('command,raw', [
-    ('git log -60', _git_log(60)),
-    ('find . -type f', '\n'.join(_find_paths()) + '\n'),
-])
-def test_devin_filter_capture_now_compresses(tmp_path, monkeypatch, command, raw):
-    import devin_compress as d
-    import devin_state as s
-    # CI sets XDG_CONFIG_HOME; any inherited Devin home override would point
-    # outside the synthetic HOME and be refused.
-    for key in ('XDG_CONFIG_HOME', 'TOKEN_OPTIMIZER_DEVIN_HOME', 'DEVIN_CONFIG_DIR', 'TOKEN_OPTIMIZER_RUNTIME'):
-        monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv('HOME', str(tmp_path))
-    s.enable_consent()
-    root = s.prepare_capture()
-    (root / 'stdout').write_bytes(raw.encode())
-    (root / 'stderr').write_bytes(b'')
-    d.seal_capture(root, 0)
-    res = d.filter_capture(root / 'stdout', root / 'stderr', 0, 'generic', 'session', command=command)
-    assert res.outcome == 'compressed'
-    assert len(res.stdout) < len(raw.encode()) * 0.6
-    assert root.name.encode() in res.stdout
-    assert (root / 'stdout').read_bytes() == raw.encode()

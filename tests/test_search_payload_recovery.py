@@ -28,10 +28,8 @@ assert Path(bash_search_results.__file__).parent==root
 '''
 
 
-@pytest.mark.parametrize('adapter', ['grok', 'copilot', 'cursor', 'antigravity', 'devin', 'codex', 'cowork'])
+@pytest.mark.parametrize('adapter', ['grok', 'copilot', 'cursor', 'antigravity', 'skill-tree'])
 def test_installed_adapter_can_render_search_without_checkout(tmp_path, monkeypatch, request, adapter):
-    if adapter == 'devin' and os.name != 'posix':
-        pytest.skip('Devin installer intentionally supports POSIX only')
     if os.name == 'posix':
         # Hosted CI Python can be world-writable. Use real copied executable
         # bytes with private modes, never bypass the installers' trust gate.
@@ -45,16 +43,12 @@ def test_installed_adapter_can_render_search_without_checkout(tmp_path, monkeypa
     monkeypatch.delenv('DEVIN_HOME', raising=False)
     monkeypatch.delenv('XDG_CONFIG_HOME', raising=False)
     monkeypatch.delenv('TOKEN_OPTIMIZER_DEVIN_HOME', raising=False)
-    if adapter in {'codex', 'cowork'}:
-        # These ship a complete generated skill tree, not an explicit Python list.
+    if adapter == 'skill-tree':
+        # The Claude Code plugin ships the complete skill tree, not an explicit
+        # Python list: a copy of the canonical scripts dir must stand alone.
         import shutil
-        source = SCRIPTS.parents[2] / ('plugins' if adapter == 'codex' else 'cowork') / 'token-optimizer/skills/token-optimizer/scripts'
         root = tmp_path / 'payload'
-        shutil.copytree(source, root, ignore=shutil.ignore_patterns('__pycache__'))
-    elif adapter == 'devin':
-        installer = importlib.import_module('devin_install')
-        installer.install()
-        root = installer.state.data_dir() / 'plugin'
+        shutil.copytree(SCRIPTS, root, ignore=shutil.ignore_patterns('__pycache__'))
     else:
         installer = importlib.import_module(adapter + '_install')
         home = tmp_path / adapter

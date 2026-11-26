@@ -90,9 +90,3 @@ def test_launchagent_loaded_probe_is_time_bounded():
     m = re.search(r'"launchctl", "print", f"gui/\{getuid\(\)\}/\{label\}"\],\s*\n\s*capture_output=True, text=True, timeout=(\d+)', src)
     assert m, "launchctl print probe not found"
     assert int(m.group(1)) <= 2, "probe timeout must be small (<=2s) on the SessionStart hot path"
-
-
-def test_both_trees_identical():
-    a = _split_measure_source(SCRIPTS / "measure.py")
-    b = _split_measure_source(ROOT / "plugins" / "token-optimizer" / "skills" / "token-optimizer" / "scripts" / "measure.py")
-    assert a == b, "measure.py drifted between install trees"

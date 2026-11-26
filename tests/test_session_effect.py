@@ -240,9 +240,7 @@ def test_headline_splits_the_removed_pool_by_what_it_is():
 
 def test_no_surface_renders_the_fresh_label_or_fresh_only_multiplier():
     root = SCRIPTS.parents[2]
-    for rel in ('skills/token-optimizer/assets/dashboard.html',
-                'plugins/token-optimizer/skills/token-optimizer/assets/dashboard.html',
-                'cowork/token-optimizer/skills/token-optimizer/assets/dashboard.html'):
+    for rel in ('skills/token-optimizer/assets/dashboard.html',):
         html = (root / rel).read_text(encoding='utf-8')
         assert "' fresh &middot; '" not in html, rel
         assert 'tokenSplitText(' in html, rel

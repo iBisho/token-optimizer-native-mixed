@@ -16,8 +16,10 @@ _spec = importlib.util.spec_from_file_location("check_regression_guards",
 guards = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(guards)
 
-TARGET = "skills/token-optimizer/scripts/cloud_kit.py"
-TEST = "tests/test_cloud_kit.py::test_prerelease_versions_are_accepted_and_sorted"
+# Any real file and real test file will do: these entries only feed the
+# validator and the stale check, which never run the guard test.
+TARGET = "scripts/check_regression_guards.py"
+TEST = "tests/test_regression_guard_harness.py::test_one_stale_edit_among_several_is_still_stale"
 
 
 @pytest.fixture
@@ -94,7 +96,7 @@ def test_malformed_mutation_files_fail_the_check(mutations_dir, capsys, body, ne
 
 
 def test_duplicate_names_across_files_fail(mutations_dir, capsys):
-    line = "MUTATIONS = [('dup', [%r], %r, [('def _version_key', 'def _vk')])]\n" % (TEST, TARGET)
+    line = "MUTATIONS = [('dup', [%r], %r, [('def plant', 'def _plant')])]\n" % (TEST, TARGET)
     (mutations_dir / "a.py").write_text(line)
     (mutations_dir / "b.py").write_text(line)
     assert guards.main(["--list"]) == 1

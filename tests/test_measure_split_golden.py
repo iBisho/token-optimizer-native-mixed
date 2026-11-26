@@ -340,7 +340,7 @@ def test_hook_has_deterministic_watchdog_order(variant):
     assert golden.compare(work / 'first', work / 'second') == []
 
 
-@pytest.mark.parametrize('argv', [['devin-doctor', '--json'], ['subagent-cache', 'enable', '--json']])
+@pytest.mark.parametrize('argv', [['subagent-cache', 'enable', '--json']])
 def test_normal_cli_fixture_has_required_markers_and_version(argv):
     import uuid
     work = REPO / '.scratch-u0' / ('normal-cli-test-' + uuid.uuid4().hex)

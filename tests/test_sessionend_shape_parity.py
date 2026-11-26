@@ -148,23 +148,6 @@ def test_root_hooks_json_sessionend_is_flush_not_collect():
         _assert_current_shape(f"root hooks.json SessionEnd[{i}]", cmd)
 
 
-def test_codex_mirror_hooks_json_sessionend_is_flush_not_collect():
-    cmds = _session_end_commands_from_hooks_json(
-        REPO / "plugins" / "token-optimizer" / "hooks" / "hooks.json"
-    )
-    assert cmds, "Codex mirror must ship a SessionEnd hook"
-    for i, cmd in enumerate(cmds):
-        _assert_current_shape(f"codex-mirror hooks.json SessionEnd[{i}]", cmd)
-
-
-def test_cowork_hooks_json_sessionend_is_flush_if_present():
-    path = REPO / "cowork" / "token-optimizer" / "hooks" / "hooks.json"
-    if not path.is_file():
-        pytest.skip("cowork hooks.json not present")
-    for i, cmd in enumerate(_session_end_commands_from_hooks_json(path)):
-        _assert_current_shape(f"cowork hooks.json SessionEnd[{i}]", cmd)
-
-
 def test_root_hooks_json_stop_is_flush_not_collect():
     """Root hooks.json Stop event must use session-end-flush --trigger stop.
 
@@ -181,43 +164,6 @@ def test_root_hooks_json_stop_is_flush_not_collect():
         "stop_runner.py" in c or ("session-end-flush" in c and "--trigger stop" in c)
         for c in cmds
     ), "root hooks.json Stop must include a session-end-flush --trigger stop hook (directly or via stop_runner.py)"
-
-
-def test_codex_mirror_hooks_json_stop_is_flush_not_collect():
-    path = REPO / "plugins" / "token-optimizer" / "hooks" / "hooks.json"
-    cmds = _stop_commands_from_hooks_json(path)
-    assert cmds, "Codex mirror must ship a Stop hook"
-    for i, cmd in enumerate(cmds):
-        _assert_stop_shape(f"codex-mirror hooks.json Stop[{i}]", cmd)
-    assert any(
-        "stop_runner.py" in c or ("session-end-flush" in c and "--trigger stop" in c)
-        for c in cmds
-    ), "codex-mirror hooks.json Stop must include a session-end-flush --trigger stop hook (directly or via stop_runner.py)"
-
-
-def test_cowork_hooks_json_stop_is_current_flush():
-    """cowork ships ONLY Stop hooks (no SessionEnd), so the SessionEnd-only
-    parity check passes vacuously. Assert over the Stop event directly: the
-    cowork Stop flush hook is the current session-end-flush --trigger stop
-    shape and carries no collect/dashboard fossil. This is the real assertion
-    that was missing -- without it cowork's Stop hooks were unchecked.
-    """
-    path = REPO / "cowork" / "token-optimizer" / "hooks" / "hooks.json"
-    if not path.is_file():
-        pytest.skip("cowork hooks.json not present")
-    cmds = _stop_commands_from_hooks_json(path)
-    assert cmds, "cowork hooks.json must ship a Stop hook (cowork is Stop-only)"
-    for i, cmd in enumerate(cmds):
-        _assert_stop_shape(f"cowork hooks.json Stop[{i}]", cmd)
-    assert any(
-        "stop_runner.py" in c or ("session-end-flush" in c and "--trigger stop" in c)
-        for c in cmds
-    ), "cowork hooks.json Stop must include a session-end-flush --trigger stop hook (directly or via stop_runner.py)"
-    # cowork has no SessionEnd event at all -- confirm that explicitly so a
-    # future SessionEnd addition does not slip past the SessionEnd parity check.
-    se_cmds = _session_end_commands_from_hooks_json(path)
-    for i, cmd in enumerate(se_cmds):
-        _assert_current_shape(f"cowork hooks.json SessionEnd[{i}]", cmd)
 
 
 def test_hooks_starter_stop_carries_no_collect_dashboard_chain():
@@ -343,11 +289,9 @@ def test_no_shipped_hooks_json_carries_collect_dashboard_chain():
 
 
 def test_glob_guard_actually_scans_known_shipped_sources():
-    """Sanity: the glob guard reaches the three shipped hooks.json and the
+    """Sanity: the glob guard reaches the shipped hooks.json and the
     starter, so a future path rename does not silently drop coverage.
     """
     files = {p.relative_to(REPO).as_posix() for p in _all_shipped_hook_jsons()}
     assert "hooks/hooks.json" in files
-    assert "plugins/token-optimizer/hooks/hooks.json" in files
-    assert "cowork/token-optimizer/hooks/hooks.json" in files
     assert "skills/token-optimizer/examples/hooks-starter.json" in files

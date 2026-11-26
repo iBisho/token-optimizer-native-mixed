@@ -1,29 +1,17 @@
 """Install closure for the reset-epoch module (K2).
 
 session_store.py and read_cache.py import `reset_epoch` as a plain sibling
-module. Every runtime tree that ships those two files must ship the sibling
-too, byte-identical, or the read-cache hook fails to import at runtime.
+module. The runtime tree that ships those two files must ship the sibling
+too, or the read-cache hook fails to import at runtime.
 """
-import hashlib
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TREES = (
     ROOT / "skills/token-optimizer/scripts",
-    ROOT / "plugins/token-optimizer/skills/token-optimizer/scripts",
-    ROOT / "cowork/token-optimizer/skills/token-optimizer/scripts",
 )
 MODULE = "reset_epoch"
-
-
-def _digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def test_reset_epoch_shipped_in_every_tree_byte_identical():
-    digests = {t: _digest(t / f"{MODULE}.py") for t in TREES}
-    assert len(set(digests.values())) == 1, digests
 
 
 def test_every_tree_that_imports_it_ships_it():

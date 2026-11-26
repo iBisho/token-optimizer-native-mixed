@@ -28,10 +28,6 @@ import pytest
 
 REPO = Path(__file__).resolve().parent.parent
 MEASURE = REPO / "skills" / "token-optimizer" / "scripts" / "measure.py"
-MEASURE_MIRROR = (
-    REPO / "plugins" / "token-optimizer" / "skills" / "token-optimizer"
-    / "scripts" / "measure.py"
-)
 
 
 def _run_compact_restore(tmp_path, env_extra=None):
@@ -68,11 +64,10 @@ def test_compact_restore_exits_clean_tiny_budget(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "src", [MEASURE, MEASURE_MIRROR], ids=["canonical", "plugin-mirror"]
+    "src", [MEASURE], ids=["canonical"]
 )
 def test_compact_restore_dispatch_installs_a_budget(src):
-    """Guard: the compact-restore CLI branch must install a hook budget, in both
-    the canonical and the codex-mirror source trees."""
+    """Guard: the compact-restore CLI branch must install a hook budget."""
     from helpers.measure_split import measure_source
     text = measure_source(src)
     idx = text.find('args[0] == "compact-restore"')

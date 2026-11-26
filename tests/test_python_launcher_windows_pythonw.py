@@ -8,8 +8,7 @@ Covers the FABLE red-team amendments:
 * stdout-pipe guard (pythonw GUI-subsystem can null sys.stdout -> dark hook
   protocol): swap only when fd 1 is a pipe, never a tty;
 * non-Windows behaviour byte-for-byte unchanged (python.exe used, no swap);
-* py.exe (``py -3``) is never swapped -- documented, not fixed;
-* mirror stays byte-identical with the canonical launcher.
+* py.exe (``py -3``) is never swapped -- documented, not fixed.
 """
 
 from __future__ import annotations
@@ -40,7 +39,6 @@ requires_pty = pytest.mark.skipif(
 
 REPO = Path(__file__).resolve().parent.parent
 LAUNCHER = REPO / "hooks" / "python-launcher.sh"
-MIRROR = REPO / "plugins" / "token-optimizer" / "hooks" / "python-launcher.sh"
 
 
 def _defs() -> str:
@@ -479,7 +477,7 @@ def test_cache_record_naming_pythonw_exe_is_rejected(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Documentation + mirror invariants.
+# Documentation invariants.
 # ---------------------------------------------------------------------------
 
 
@@ -493,8 +491,7 @@ def test_documents_py_launcher_pyw_swap():
     assert "still flash" not in source
 
 
-def test_mirror_remains_byte_identical():
-    assert LAUNCHER.read_bytes() == MIRROR.read_bytes()
+def test_launcher_defines_the_pythonw_swap():
     assert b"_maybe_swap_to_pythonw" in LAUNCHER.read_bytes()
 
 
@@ -527,18 +524,15 @@ def test_windowsapps_probe_uses_kill_after():
     )
 
 
-def test_kill_after_present_in_mirror():
-    """The mirror must carry the same --kill-after=1s probes."""
-    source = MIRROR.read_bytes()
-    assert b"--kill-after=1s 2s" in source, (
-        "the mirror launcher must carry --kill-after=1s on both probe sites"
-    )
+def test_kill_after_present_on_every_probe_site():
+    """Every probe site carries --kill-after=1s."""
+    source = LAUNCHER.read_bytes()
     # Exactly three occurrences (one per probe site): the _maybe_swap_to_pythonw
     # liveness probe, the GUI-twin proof-of-life probe, and the console
     # --version fallback probe (both now in _probe_windowsapps_candidate).
     # Updated from 2 when the flash-free twin probe was added.
     assert source.count(b"--kill-after=1s 2s") == 3, (
-        "expected exactly three --kill-after=1s probe sites in the mirror; "
+        "expected exactly three --kill-after=1s probe sites in the launcher; "
         f"got {source.count(b'--kill-after=1s 2s')}"
     )
 
@@ -626,14 +620,6 @@ def test_safe_prefix_extglob_enabled_in_launcher():
     )
 
 
-def test_safe_prefix_extglob_in_mirror():
-    """The mirror must also enable extglob."""
-    source = MIRROR.read_text(encoding="utf-8")
-    assert "shopt -s extglob" in source, (
-        "mirror launcher must enable extglob so +([0-9]) patterns work"
-    )
-
-
 # ---------------------------------------------------------------------------
 # WindowsApps skip must be case-insensitive. Windows is a
 # case-insensitive FS, so the directory can appear as WindowsApps,
@@ -677,16 +663,15 @@ def test_windowsapps_not_detected_for_unrelated_path():
     )
 
 
-def test_windowsapps_helper_in_both_launchers():
-    """Both launchers must define _path_contains_windowsapps."""
-    for launcher, label in [(LAUNCHER, "canonical"), (MIRROR, "mirror")]:
-        source = launcher.read_text(encoding="utf-8")
-        assert "_path_contains_windowsapps" in source, (
-            f"{label} launcher must define _path_contains_windowsapps"
-        )
-        assert "[wW][iI][nN][dD][oO][wW][sS][aA][pP][pP][sS]" in source, (
-            f"{label} launcher must match casing without spawning tr"
-        )
+def test_windowsapps_helper_in_launcher():
+    """The launcher must define _path_contains_windowsapps."""
+    source = LAUNCHER.read_text(encoding="utf-8")
+    assert "_path_contains_windowsapps" in source, (
+        "launcher must define _path_contains_windowsapps"
+    )
+    assert "[wW][iI][nN][dD][oO][wW][sS][aA][pP][pP][sS]" in source, (
+        "launcher must match casing without spawning tr"
+    )
 
 @pytest.mark.parametrize("name,twin", [("python", "pythonw.exe"), ("python3", "pythonw.exe"), ("py", "pyw.exe")])
 def test_suffixless_windows_interpreter_swaps(tmp_path, name, twin):

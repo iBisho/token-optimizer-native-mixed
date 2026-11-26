@@ -139,12 +139,3 @@ def test_dashboard_card_relabeled():
     html = (ROOT / "skills" / "token-optimizer" / "assets" / "dashboard.html").read_text(encoding="utf-8")
     assert "Not Invoked (" in html
     assert "Never Used (" not in html
-
-
-def test_both_trees_identical():
-    a = _split_measure_source(SCRIPTS / "measure.py")
-    b = _split_measure_source(ROOT / "plugins" / "token-optimizer" / "skills" / "token-optimizer" / "scripts" / "measure.py")
-    assert a == b, "measure.py drifted between install trees"
-    da = (ROOT / "skills" / "token-optimizer" / "assets" / "dashboard.html").read_text(encoding="utf-8")
-    db = (ROOT / "plugins" / "token-optimizer" / "skills" / "token-optimizer" / "assets" / "dashboard.html").read_text(encoding="utf-8")
-    assert da == db, "dashboard.html drifted between install trees"

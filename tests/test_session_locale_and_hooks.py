@@ -23,7 +23,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-SCRIPTS = REPO / "plugins" / "token-optimizer" / "skills" / "token-optimizer" / "scripts"
+SCRIPTS = REPO / "skills" / "token-optimizer" / "scripts"
 MEASURE = SCRIPTS / "measure.py"
 
 
@@ -224,9 +224,7 @@ def test_verbosity_min_fill_is_clamped():
         )
 
 
-# ---------- 4. Dual-tree parity ----------
-
-# ---------- 3. Claude Desktop / WSL 2 ccd-cli launcher (issue #192) ----------
+# ---------- 4. Claude Desktop / WSL 2 ccd-cli launcher (issue #192) ----------
 
 _MATCHER_PROBE = """
 import sys; sys.path.insert(0, '.')
@@ -326,40 +324,6 @@ def test_ccd_cli_source_documents_issue_192():
     assert "/.claude/remote/ccd-cli/" in src, \
         "ccd-cli launcher segment missing from the process matcher"
     assert "issue #192" in src, "issue #192 reference missing from measure.py"
-
-
-def test_measure_py_dual_tree_parity():
-    """The canonical skills/ measure.py and the generated plugins/ mirror must
-    be byte-identical, or these tests (which read the plugins/ copy) could pass
-    while the shipped/canonical copy drifts."""
-    canonical = REPO / "skills" / "token-optimizer" / "scripts" / "measure.py"
-    mirror = MEASURE  # plugins/.../measure.py
-    assert canonical.exists(), f"canonical measure.py missing: {canonical}"
-    assert mirror.exists(), f"plugins mirror measure.py missing: {mirror}"
-    assert canonical.read_bytes() == mirror.read_bytes(), \
-        "measure.py drift between skills/ and plugins/ — run scripts/sync-codex-marketplace-plugin.sh"
-
-
-def test_hooks_dual_tree_parity():
-    """Every file in hooks/ must be byte-identical between the canonical tree
-    and the plugins/ mirror, except hooks.json which is intentionally async-
-    stripped in the mirror (see test_mirror_has_async_stripped_but_is_otherwise_identical).
-    Catches drift in run.py, module_runner.py, python-launcher.sh, etc."""
-    canonical_hooks = REPO / "hooks"
-    mirror_hooks = REPO / "plugins" / "token-optimizer" / "hooks"
-    assert canonical_hooks.is_dir(), f"canonical hooks/ missing: {canonical_hooks}"
-    assert mirror_hooks.is_dir(), f"plugins mirror hooks/ missing: {mirror_hooks}"
-    # hooks.json is the declared async exception; everything else must match.
-    # Skip __pycache__ (bytecode cache, not source).
-    for cf in canonical_hooks.iterdir():
-        if cf.name == "hooks.json" or cf.name == "__pycache__":
-            continue
-        mf = mirror_hooks / cf.name
-        assert mf.exists(), f"mirror hooks/{cf.name} missing"
-        assert cf.read_bytes() == mf.read_bytes(), (
-            f"hooks/{cf.name} drift between canonical and plugins/ — "
-            f"run scripts/sync-codex-marketplace-plugin.sh"
-        )
 
 
 def main():

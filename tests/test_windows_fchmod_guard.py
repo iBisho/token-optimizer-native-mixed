@@ -35,12 +35,8 @@ MEASURE = SCRIPTS / "measure.py"
 # --- Layer 1: source guard over every fchmod site (bug-class tripwire) ---
 
 def test_every_fchmod_call_is_guarded():
-    # Scan EVERY shipped copy of measure.py, not just the canonical one: the repo
-    # keeps three byte-identical mirrors (skills/, plugins/, cowork/), and an
-    # unguarded os.fchmod in any of them crashes Windows just the same.
-    measures = [REPO / prefix / 'skills/token-optimizer/scripts/measure.py'
-                for prefix in ('', 'plugins/token-optimizer', 'cowork/token-optimizer')]
-    assert measures, "no measure.py copies found to scan"
+    # measure_source() reads measure.py plus its split _measure/ providers.
+    measures = [MEASURE]
     unguarded = []
     for mp in measures:
         lines = measure_source(mp).splitlines()

@@ -23,8 +23,7 @@ handler (or at best the launcher) directly. The escapes:
              leaves the variable unset (Claude Code cloud)
 
 So every test here starts from the LITERAL command string a host would run:
-hooks/hooks.json (Claude Code plugin), plugins/token-optimizer/hooks/hooks.json
-(Codex marketplace plugin), cowork/token-optimizer/hooks/hooks.json (Cowork),
+hooks/hooks.json (Claude Code plugin),
 the commands codex_install writes into ~/.codex/hooks.json, the settings hooks
 the cloud kit writes into the VM's ~/.claude/settings.json, and the Copilot
 hook file. Each one runs through ``/bin/sh -c`` with a realistic stdin payload,
@@ -131,10 +130,6 @@ def _load(rel):
 
 
 CLAUDE_MANIFEST = "hooks/hooks.json"
-CODEX_PLUGIN_ROOT = REPO / "plugins" / "token-optimizer"
-CODEX_PLUGIN_MANIFEST = "plugins/token-optimizer/hooks/hooks.json"
-COWORK_ROOT = REPO / "cowork" / "token-optimizer"
-COWORK_MANIFEST = "cowork/token-optimizer/hooks/hooks.json"
 
 
 def codex_global_hooks(root: Path) -> dict:
@@ -326,7 +321,7 @@ class Sandbox:
 
     def transcript_for(self, harness, sid=SID):
         # Codex sends its own rollout path, whichever way TO was installed.
-        if harness in ("codex-global", "codex-plugin"):
+        if harness == "codex-global":
             return self.codex_rollout(sid)
         if sid == SID:
             return self.transcript
@@ -437,10 +432,6 @@ def sandbox(tmp_path, wire_shared):
 def harness_entries(harness, sb: Sandbox):
     if harness == "claude":
         return _entries_from(_load(CLAUDE_MANIFEST), "claude")
-    if harness == "codex-plugin":
-        return _entries_from(_load(CODEX_PLUGIN_MANIFEST), "codex-plugin")
-    if harness == "cowork":
-        return _entries_from(_load(COWORK_MANIFEST), "cowork")
     if harness == "cloud-kit":
         runner = write_cloud_runner(sb.home / ".cache" / "token-optimizer-cloud")
         return _entries_from(cloud_kit_hooks(runner), "cloud-kit")
@@ -459,14 +450,6 @@ def harness_entries(harness, sb: Sandbox):
 def harness_env(harness, sb: Sandbox, **kw):
     if harness == "claude":
         return sb.env(plugin_root=REPO, **kw)
-    if harness == "codex-plugin":
-        # What Codex gives a plugin hook: CLAUDE_PLUGIN_ROOT, no CODEX_HOME,
-        # no runtime hint (tests/test_codex_sessionstart_json_contract.py).
-        return sb.env(plugin_root=CODEX_PLUGIN_ROOT, **kw)
-    if harness == "cowork":
-        extra = {"CLAUDE_CODE_REMOTE": "true", "CLAUDE_CODE_CONTAINER_ID": "wire-container",
-                 **(kw.pop("extra", None) or {})}
-        return sb.env(plugin_root=COWORK_ROOT, extra=extra, **kw)
     if harness == "cloud-kit":
         # Live cloud VM (FINDINGS P8/P9): CLAUDE_PLUGIN_ROOT is NOT set.
         extra = {"CLAUDE_CODE_REMOTE": "true", "CLAUDE_CODE_REMOTE_SESSION_ID": "cse_wire",
@@ -509,7 +492,7 @@ def stdout_problem(harness, event, stdout):
     text = stdout.strip()
     if not text:
         return None
-    codex = harness in ("codex-plugin", "codex-global")
+    codex = harness == "codex-global"
     if harness == "copilot":
         try:
             obj = json.loads(text)
@@ -566,7 +549,7 @@ def additional_context(stdout):
 # 1. Every entry of every manifest, normal host env
 # --------------------------------------------------------------------------- #
 
-HARNESSES = ["claude", "codex-plugin", "cowork", "cloud-kit", "codex-global", "copilot"]
+HARNESSES = ["claude", "cloud-kit", "codex-global", "copilot"]
 
 
 @pytest.mark.parametrize("harness", HARNESSES)
@@ -593,8 +576,8 @@ def test_every_manifest_entry_runs_its_handler_and_honours_the_output_contract(h
 
 def test_manifest_list_is_complete():
     """Guard against a vacuous pass: every shipped hooks.json with command hooks
-    (except the Cowork probe plugin) is driven above."""
-    driven = {CLAUDE_MANIFEST, CODEX_PLUGIN_MANIFEST, COWORK_MANIFEST}
+    is driven above."""
+    driven = {CLAUDE_MANIFEST}
     shipped = set()
     # Shipped = tracked by git. A local build/ (npm pack staging) or any other
     # untracked copy is not shipped and must not decide this test. Copies
@@ -617,7 +600,8 @@ def test_manifest_list_is_complete():
             shipped.add(rel)
     assert shipped == driven, f"undriven hook manifests: {sorted(shipped - driven)}"
     total = sum(len(_entries_from(_load(rel), "x")) for rel in driven)
-    assert total >= 30, f"only {total} command hooks across the shipped manifests"
+    # One plugin manifest now (it was three, at >= 30 together).
+    assert total >= 10, f"only {total} command hooks across the shipped manifests"
 
 
 def pick(entries, event, *, matcher_prefix=None, handler=None):
@@ -646,7 +630,7 @@ def scheduler_shim_dirs():
 # 2. CLAUDE_PLUGIN_ROOT unset (Claude Code cloud)
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("harness", ["claude", "codex-plugin", "cowork"])
+@pytest.mark.parametrize("harness", ["claude"])
 def test_plugin_manifest_without_plugin_root_exits_clean(harness, sandbox):
     """A plugin manifest cannot locate itself without CLAUDE_PLUGIN_ROOT (cloud
     VMs leave it unset). It must then do nothing at all: exit 0, no stdout the
@@ -685,7 +669,7 @@ def test_settings_level_hooks_run_without_plugin_root(harness, sandbox):
 # 3. PATH without bash (#80)
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("harness", ["claude", "codex-plugin", "cowork", "cloud-kit", "codex-global"])
+@pytest.mark.parametrize("harness", ["claude", "cloud-kit", "codex-global"])
 def test_hooks_run_when_path_has_no_bash(harness, sandbox):
     """#80: the hook runner's PATH can be stripped. `/bin/sh: bash: No such file`
     exit 127 then fired on nearly every tool call. With a PATH holding nothing
@@ -743,26 +727,6 @@ def _version_cache(sb: Sandbox, live_root: Path, host_dir=".codex"):
     base.mkdir(parents=True)
     old, new = base / "5.13.50", base / "5.13.51"
     return base, old, new
-
-
-def test_codex_plugin_hooks_survive_an_upgrade_mid_session(sandbox):
-    """Codex hands a plugin hook the CLAUDE_PLUGIN_ROOT it loaded at session
-    start. An upgrade deletes that version dir under the running session. The
-    manifest resolves the newest sibling, and the handler must actually run
-    from it (not exit 0 having done nothing)."""
-    base, old, new = _version_cache(sandbox, CODEX_PLUGIN_ROOT)
-    new.symlink_to(CODEX_PLUGIN_ROOT, target_is_directory=True)
-    entries = harness_entries("codex-plugin", sandbox)
-    failures = []
-    for event, mp in (("SessionStart", None), ("PreToolUse", "Read"), ("PostToolUse", None),
-                      ("Stop", None), ("UserPromptSubmit", None)):
-        e = pick(entries, event, matcher_prefix=mp)
-        env = harness_env("codex-plugin", sandbox)
-        env["CLAUDE_PLUGIN_ROOT"] = str(old)  # deleted by the upgrade
-        r = fire_entry(sandbox, e, env)
-        if r.rc != 0 or not r.ran(*e.expected_handler()) or stdout_problem("codex-plugin", e.event, r.out):
-            failures.append(f"{e.id}\n{r}")
-    assert not failures, "\n\n".join(failures)
 
 
 def test_codex_global_hooks_survive_an_upgrade(sandbox):
@@ -855,8 +819,7 @@ def test_claude_plugin_hooks_pick_the_highest_semver_sibling(sandbox):
 def test_codex_loaded_manifests_carry_no_async_hooks(sandbox):
     """#83: Codex warns 'async hooks are not supported yet' and SKIPS the entry,
     so an async hook in a Codex-loaded manifest silently never runs there."""
-    offenders = [e.id for e in harness_entries("codex-plugin", sandbox) + harness_entries("codex-global", sandbox)
-                 if e.is_async]
+    offenders = [e.id for e in harness_entries("codex-global", sandbox) if e.is_async]
     assert not offenders, offenders
 
 
@@ -876,7 +839,7 @@ def _matches(entry, tool):
     return re.fullmatch(entry.matcher, tool) is not None
 
 
-@pytest.mark.parametrize("harness", ["claude", "codex-plugin", "cowork", "cloud-kit", "codex-global"])
+@pytest.mark.parametrize("harness", ["claude", "cloud-kit", "codex-global"])
 def test_hot_path_events_stay_within_a_process_budget(harness, sandbox):
     """#139: six UserPromptSubmit entries spawned 18 processes and ~800 ms of
     blocking time per prompt. Fire every manifest entry that matches one hot
@@ -921,7 +884,7 @@ CHECKPOINT_HOOKS = [
 ]
 
 
-@pytest.mark.parametrize("harness", ["claude", "cloud-kit", "cowork", "codex-global", "codex-plugin"])
+@pytest.mark.parametrize("harness", ["claude", "cloud-kit", "codex-global"])
 def test_checkpoint_hooks_really_write_the_checkpoint(harness, sandbox):
     """#253: 'the PreCompact hook reports success, but no checkpoint appears'.
     Each checkpoint-writing hook, fired through its manifest command, must leave
@@ -955,7 +918,7 @@ def test_checkpoint_hooks_really_write_the_checkpoint(harness, sandbox):
     assert not failures, "\n\n".join(failures)
 
 
-@pytest.mark.parametrize("harness", ["codex-global", "codex-plugin"])
+@pytest.mark.parametrize("harness", ["codex-global"])
 def test_codex_stop_finds_the_transcript_from_the_session_id_alone(harness, sandbox):
     """#278: an automatic Codex Stop wrote ``unknown-...-stop.md`` holding only
     "No transcript data available" while the rollout was right there. With
@@ -1070,7 +1033,7 @@ def _this_session_checkpoint(sb: Sandbox, harness):
         f"{r}\n{sorted(p.name for p in _snapshot(cps))}")
 
 
-TALKATIVE = ["claude", "codex-plugin", "cowork", "cloud-kit", "codex-global"]
+TALKATIVE = ["claude", "cloud-kit", "codex-global"]
 
 
 @pytest.mark.parametrize("harness", TALKATIVE)
@@ -1098,8 +1061,6 @@ def test_session_start_speaks_valid_json_under_its_own_event(harness, source, sa
     After a compaction the restore must speak; on a fresh start with a prior
     session on disk the pointer must speak; both as ONE JSON object under
     SessionStart."""
-    if harness == "cowork":
-        pytest.skip("the Cowork build wires no SessionStart (Cowork does not fire it)")
     warm(sandbox, harness)
     if source == "compact":
         _this_session_checkpoint(sandbox, harness)
@@ -1114,7 +1075,7 @@ def test_session_start_speaks_valid_json_under_its_own_event(harness, source, sa
     assert r.out.strip().startswith("{"), f"SessionStart output must be the JSON envelope\n{r}"
 
 
-@pytest.mark.parametrize("harness", ["claude", "codex-plugin", "codex-global"])
+@pytest.mark.parametrize("harness", ["claude", "codex-global"])
 def test_stop_after_real_work_keeps_stdout_host_valid(harness, sandbox):
     """#76: a Stop hook exited 0 but printed a plain line; Codex failed the hook."""
     warm(sandbox, harness)

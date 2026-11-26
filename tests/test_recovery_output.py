@@ -135,20 +135,6 @@ def test_no_recovery_savings_events(tmp_path):
         finally:
             conn.close()
 
-@pytest.mark.parametrize('root', ['plugins/token-optimizer', 'cowork/token-optimizer'])
-def test_installed_mirrors_preserve_recovery(tmp_path, root):
-    import shlex
-    installed = SCRIPTS.parents[2] / root / 'skills/token-optimizer/scripts'
-    command = f'{shlex.quote(sys.executable)} {shlex.quote(str(installed / "measure.py"))} expand original'
-    # Reuse the real subprocess harness with the installed script path.
-    for script, name in [('archive_result.py', 'mcp__caveman__caveman_retrieve'),
-                         ('bash_compress_hook.py', 'Bash')]:
-        out = run_hook(tmp_path, str(installed / script), {'tool_name': name,
-            'session_id': 'installed', 'tool_use_id': 'original', 'tool_input': {'command': command},
-            'tool_response': {'stdout': BODY, 'stderr': '', 'exit_code': 0} if name == 'Bash' else BODY})
-        assert not out.strip(), out
-    assert not list(tmp_path.rglob('manifest.jsonl'))
-
 
 def test_consolidated_runner_keeps_recovery_original(tmp_path):
     runner = SCRIPTS.parents[2] / 'hooks/posttooluse_runner.py'

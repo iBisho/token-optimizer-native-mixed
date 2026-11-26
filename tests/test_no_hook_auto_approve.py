@@ -102,11 +102,7 @@ def test_claude_code_pretooluse_scripts_never_emit_allow():
 
 @pytest.mark.parametrize("relative", [
     "hooks/hooks.json",
-    "plugins/token-optimizer/hooks/hooks.json",
-    "cowork/token-optimizer/hooks/hooks.json",
     "skills/token-optimizer/examples/hooks-starter.json",
-    "plugins/token-optimizer/skills/token-optimizer/examples/hooks-starter.json",
-    "cowork/token-optimizer/skills/token-optimizer/examples/hooks-starter.json",
 ])
 def test_no_manifest_registers_the_silent_bash_hook(relative):
     """Keep the shared gate module, but never spawn its no-op CLI per Bash call."""

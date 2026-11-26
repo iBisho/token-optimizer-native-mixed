@@ -16,7 +16,6 @@ pytestmark = pytest.mark.skipif(
 
 REPO = Path(__file__).resolve().parent.parent
 LAUNCHER = REPO / "hooks" / "python-launcher.sh"
-MIRROR = REPO / "plugins" / "token-optimizer" / "hooks" / "python-launcher.sh"
 
 
 def _cache_file_for(tmp_path: Path, path_value: str, platform: str) -> str:
@@ -99,10 +98,8 @@ def test_msys_ownership_fallback_keeps_posix_owner_check_and_confinement():
     assert 'cache_dir="/tmp/' not in source
 
 
-def test_launcher_mirror_is_byte_identical():
-    canonical = LAUNCHER.read_bytes()
-    assert b"path_hash" in canonical
-    assert canonical == MIRROR.read_bytes()
+def test_launcher_keys_the_cache_by_path_hash():
+    assert b"path_hash" in LAUNCHER.read_bytes()
 
 
 def test_cache_key_carries_probe_epoch(tmp_path):

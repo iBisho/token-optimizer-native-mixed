@@ -62,9 +62,6 @@ def test_manual_refresh_cmd_carries_no_defer():
     assert "session-end-flush --trigger manual --no-defer" in src
 
 
-def test_both_trees_have_the_dispatch():
+def test_measure_has_the_dispatch():
     top = _split_measure_source(SCRIPTS / "measure.py")
-    mirror = _split_measure_source(REPO / "plugins" / "token-optimizer" / "skills" / "token-optimizer"
-              / "scripts" / "measure.py")
     assert "_dispatch_session_end_flush" in top
-    assert top == mirror, "measure.py trees must be byte-identical"
