@@ -1,5 +1,5 @@
-module github.com/bisho/token-optimizer/native/toidx
+module github.com/iBisho/token-optimizer-native-mixed/native/toidx
 
-go 1.27.0
+go 1.24
 
-require github.com/valyala/fastjson v1.6.10 // indirect
+require github.com/valyala/fastjson v1.6.10

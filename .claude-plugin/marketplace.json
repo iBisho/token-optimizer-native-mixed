@@ -1,25 +1,25 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "alexgreensh-token-optimizer",
+  "name": "token-optimizer-native-mixed",
   "owner": {
-    "name": "Alex Greenshpun",
-    "email": "alexgreensh@users.noreply.github.com"
+    "name": "Bisho",
+    "email": "iBisho@users.noreply.github.com"
   },
   "metadata": {
-    "description": "Token optimization tools for Claude Code"
+    "description": "Token Optimizer for Claude Code with native (Go) transcript scanning"
   },
   "plugins": [
     {
       "name": "token-optimizer",
       "source": "./",
-      "description": "Audit, fix, and monitor Claude Code context window usage. Find the ghost tokens.",
+      "description": "Audit, fix, and monitor Claude Code context window usage. Native fork of alexgreensh/token-optimizer: the slow transcript scans run in Go, with identical results.",
       "version": "5.13.76",
       "author": {
-        "name": "Alex Greenshpun",
-        "url": "https://linkedin.com/in/alexgreensh"
+        "name": "Alex Greenshpun (original), Bisho (native fork)",
+        "url": "https://github.com/iBisho/token-optimizer-native-mixed"
       },
-      "homepage": "https://github.com/alexgreensh/token-optimizer",
-      "repository": "https://github.com/alexgreensh/token-optimizer",
+      "homepage": "https://github.com/iBisho/token-optimizer-native-mixed",
+      "repository": "https://github.com/iBisho/token-optimizer-native-mixed",
       "license": "PolyForm-Noncommercial-1.0.0",
       "keywords": [
         "token",
@@ -27,48 +27,8 @@
         "context",
         "audit",
         "cost",
-        "coach"
-      ],
-      "category": "productivity"
-    },
-    {
-      "name": "to-hook-probe",
-      "source": "./cowork/to-hook-probe",
-      "description": "[BETA] Token Optimizer Cowork hook-firing diagnostic. Install this FIRST in Claude Cowork to see which hooks actually fire on your build. Writes a marker + env dump you can read in-session. Part of the beta Cowork adapter.",
-      "version": "0.1.0",
-      "author": {
-        "name": "Alex Greenshpun",
-        "url": "https://linkedin.com/in/alexgreensh"
-      },
-      "homepage": "https://github.com/alexgreensh/token-optimizer",
-      "repository": "https://github.com/alexgreensh/token-optimizer",
-      "license": "PolyForm-Noncommercial-1.0.0",
-      "keywords": [
-        "cowork",
-        "beta",
-        "diagnostic",
-        "hooks"
-      ],
-      "category": "productivity"
-    },
-    {
-      "name": "token-optimizer-cowork",
-      "source": "./cowork/token-optimizer",
-      "description": "Token Optimizer for Claude Cowork \u2014 full skills + Cowork-native hooks (beta). Install THIS in Cowork; the standard token-optimizer entry is for desktop Claude Code.",
-      "version": "5.13.76",
-      "author": {
-        "name": "Alex Greenshpun",
-        "url": "https://linkedin.com/in/alexgreensh"
-      },
-      "homepage": "https://github.com/alexgreensh/token-optimizer",
-      "repository": "https://github.com/alexgreensh/token-optimizer",
-      "license": "PolyForm-Noncommercial-1.0.0",
-      "keywords": [
-        "token",
-        "optimization",
-        "context",
-        "cowork",
-        "beta"
+        "coach",
+        "native"
       ],
       "category": "productivity"
     }

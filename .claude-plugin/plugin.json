@@ -1,12 +1,12 @@
 {
   "name": "token-optimizer",
-  "description": "Audit, fix, and monitor Claude Code context window usage. Find the ghost tokens.",
+  "description": "Audit, fix, and monitor Claude Code context window usage. Native fork of alexgreensh/token-optimizer: the slow transcript scans run in Go, with identical results.",
   "author": {
-    "name": "Alex Greenshpun",
-    "url": "https://linkedin.com/in/alexgreensh"
+    "name": "Alex Greenshpun (original), Bisho (native fork)",
+    "url": "https://github.com/iBisho/token-optimizer-native-mixed"
   },
-  "homepage": "https://github.com/alexgreensh/token-optimizer",
-  "repository": "https://github.com/alexgreensh/token-optimizer",
+  "homepage": "https://github.com/iBisho/token-optimizer-native-mixed",
+  "repository": "https://github.com/iBisho/token-optimizer-native-mixed",
   "version": "5.13.76",
   "license": "PolyForm-Noncommercial-1.0.0",
   "keywords": [

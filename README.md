@@ -1,74 +1,52 @@
 <p align="center">
-  <b>English</b> ·
-  <a href="README.ko.md">한국어</a> ·
-  <a href="README.zh-CN.md">简体中文</a> ·
-  <a href="README.ja.md">日本語</a>
-</p>
-
-<p align="center">
   <img src="skills/token-optimizer/assets/logo.svg" alt="Token Optimizer" width="780">
 </p>
 
 <p align="center">
-  <a href="https://github.com/alexgreensh/token-optimizer/releases/latest"><img src="https://badgen.net/github/release/alexgreensh/token-optimizer?label=version&color=green" alt="Latest stable version"></a>
-  <a href="https://github.com/alexgreensh/token-optimizer/commits/main"><img src="https://badgen.net/github/last-commit/alexgreensh/token-optimizer?label=last%20commit" alt="Last commit"></a>
-</p>
-<p align="center">
-  <img src="https://img.shields.io/badge/cuts%20context%20waste-3fb950" alt="Cuts context waste">
-  <img src="https://img.shields.io/badge/survives%20compaction-checkpoint%20%2B%20restore-58a6ff" alt="Survives compaction">
-  <img src="https://img.shields.io/badge/saves%20real%20%24-every%20session-2ea043" alt="Saves real dollars every session">
-  <img src="https://img.shields.io/badge/live%20dashboard-tokens%20%2B%20%24%20%2B%20turns-8B5CF6?logo=chartdotjs&logoColor=white" alt="Live dashboard">
-  <img src="https://img.shields.io/badge/context%20quality-live%20score-blue" alt="Live context quality score">
-  <img src="https://img.shields.io/badge/tests-passing-brightgreen" alt="Tests passing">
-</p>
-<p align="center">
-  <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero Dependencies">
-  <img src="https://img.shields.io/badge/telemetry-none-brightgreen" alt="Zero Telemetry">
+  <img src="https://img.shields.io/badge/Claude%20Code-plugin-e85329" alt="Claude Code plugin">
+  <img src="https://img.shields.io/badge/native-Go-00ADD8?logo=go&logoColor=white" alt="Native Go">
   <img src="https://img.shields.io/badge/python-3.9+-blue" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="Platform">
-  <a href="https://github.com/alexgreensh/token-optimizer/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="License: PolyForm Noncommercial"></a>
-  <a href="https://github.com/alexgreensh/token-optimizer/stargazers"><img src="https://badgen.net/github/stars/alexgreensh/token-optimizer" alt="GitHub Stars"></a>
-  <a href="https://github.com/alexgreensh/token-optimizer/commits/main"><img src="https://badgen.net/github/commits/alexgreensh/token-optimizer?label=commits" alt="Commits"></a>
-  <a href="https://linkedin.com/in/alexgreensh"><img src="https://img.shields.io/badge/LinkedIn-Connect-0A66C2?logo=linkedin&logoColor=white" alt="Connect on LinkedIn"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platform">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="License: PolyForm Noncommercial"></a>
 </p>
-<p align="center">
-  <a href="https://trendshift.io/repositories/25856?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-25856"><img src="https://trendshift.io/api/badge/repositories/25856" alt="alexgreensh/token-optimizer | Trendshift" width="250" height="55"></a>
-</p>
-<p align="center">
-  <a href="https://github.com/sponsors/alexgreensh"><img src="https://img.shields.io/badge/%E2%99%A5%20Support%20this%20project%20to%20keep%20it%20open%20source-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Support this project to keep it open source"></a>
-</p>
+
+# Token Optimizer, native edition
+
+A Claude Code-only edition of [Token Optimizer](https://github.com/alexgreensh/token-optimizer)
+by Alex Greenshpun, with the slow transcript scans rewritten in Go.
+
+**Why.** On a large transcript history (3 GB, Windows) the original rebuilds its
+dashboard in about 5 minutes, and its background regen is killed at 300 s, so the
+dashboard never updates. Here the same dashboard takes about 36 s, with results
+identical to the original's (checked by equivalence tests, see
+[native/README.md](native/README.md)).
+
+**What changed.**
+
+- A small Go binary, `toidx` (prebuilt for Windows, macOS and Linux in `native/bin`),
+  reads each transcript once and keeps a compact projection per reader; only changed
+  transcripts are re-read.
+- The per-session parsers (`parse_session_turns`, `_parse_session_jsonl`) and the
+  connector/skill-listing scan run natively, with Python's exact semantics.
+- Large transcripts (over 96 MB) are not re-encoded on every read.
+- The process table on Windows comes from Win32 instead of three PowerShell starts.
+- Everything is fail-open: without the binary, or on anything it is unsure about,
+  the original Python code runs.
+- Only the Claude Code plugin is kept (CLI and desktop app, including the desktop
+  status bar). The Codex, Cowork, OpenCode, OpenClaw, Pi, Copilot, Cursor, Devin,
+  Hermes and Antigravity adapters and the original's release tooling are removed.
+
+Everything below the install section is the original project's feature guide.
 
 <h2 align="center">Cut the tokens you waste. Keep the work you'd lose.</h2>
 
 <p align="center"><em>It runs automatically in the background. You keep working as usual. Run the audit when you want the full picture.</em></p>
-
-<p align="center">
-  <a href="https://alexgreensh.github.io/token-optimizer/"><img src="https://img.shields.io/badge/%F0%9F%93%96%20Read%20the%20Docs-alexgreensh.github.io%2Ftoken--optimizer-e85329?style=for-the-badge&logoColor=white" alt="Read the documentation"></a>
-  <a href="https://alexgreensh.github.io/token-optimizer/start/quickstart/"><img src="https://img.shields.io/badge/Quickstart-2%20minutes-3fb950?style=for-the-badge" alt="Quickstart in 2 minutes"></a>
-</p>
 
 ## The 30-Second Version
 
 Token Optimizer cuts the tokens your AI coding assistant wastes, keeps your work alive across sessions and compactions, and shows you where every dollar went on a live dashboard. **Most of it runs automatically. You install it, run the audit once, and the hooks do the rest.**
 
 **Why not just use Headroom or RTK?** They compress command output, which covers 15-25% of your context. Token Optimizer covers that plus the other 75%: bloated configs, unused skills, stale memory, compaction loss, model misrouting, behavioral waste. Every saving is cache-safe and measured. The dashboard updates after every session, automatically.
-
-Works on the AI coding tools below, with a [Devin output-filter beta](https://github.com/alexgreensh/token-optimizer/blob/main/devin/README.md) (manual skill, or `install.sh --devin --auto` for automatic compression):
-
-<p align="center">
-  <a href="https://alexgreensh.github.io/token-optimizer/platforms/claude-code/"><img src="skills/token-optimizer/assets/platforms/claude-code.svg" width="96" alt="Claude Code"></a>
-  <a href="https://alexgreensh.github.io/token-optimizer/platforms/codex/"><img src="skills/token-optimizer/assets/platforms/codex.svg" width="96" alt="Codex"></a>
-  <a href="https://alexgreensh.github.io/token-optimizer/platforms/opencode/"><img src="skills/token-optimizer/assets/platforms/opencode.svg" width="96" alt="OpenCode"></a>
-  <a href="https://alexgreensh.github.io/token-optimizer/platforms/openclaw/"><img src="skills/token-optimizer/assets/platforms/openclaw.svg" width="96" alt="OpenClaw"></a>
-  <a href="https://alexgreensh.github.io/token-optimizer/platforms/hermes/"><img src="skills/token-optimizer/assets/platforms/hermes.svg" width="96" alt="Hermes"></a>
-  <a href="https://alexgreensh.github.io/token-optimizer/platforms/copilot/"><img src="skills/token-optimizer/assets/platforms/copilot.svg" width="96" alt="GitHub Copilot"></a>
-  <picture><source media="(max-width: 767px)" srcset="skills/token-optimizer/assets/platforms/row-break-none.svg"><img src="skills/token-optimizer/assets/platforms/row-break.svg" alt=""></picture>
-  <a href="https://alexgreensh.github.io/token-optimizer/platforms/pi/"><img src="skills/token-optimizer/assets/platforms/pi.svg" width="96" alt="Pi Coding Agent"></a>
-  <a href="https://alexgreensh.github.io/token-optimizer/platforms/cursor/"><img src="skills/token-optimizer/assets/platforms/cursor.svg" width="96" alt="Cursor"></a>
-  <a href="https://alexgreensh.github.io/token-optimizer/platforms/antigravity/"><img src="skills/token-optimizer/assets/platforms/antigravity.svg" width="96" alt="Google Antigravity (beta)"></a>
-  <a href="https://alexgreensh.github.io/token-optimizer/platforms/grok/"><img src="skills/token-optimizer/assets/platforms/grok.svg" width="96" alt="Grok Build (beta)"></a>
-  <a href="https://alexgreensh.github.io/token-optimizer/platforms/devin/"><img src="skills/token-optimizer/assets/platforms/devin.svg" width="96" alt="Devin (beta)"></a>
-</p>
 
 ## What You Get
 
@@ -115,127 +93,46 @@ It comes with the plugin, nothing extra to install. [Everything the bar does](#d
 
 ## Install
 
-**Claude Code (recommended):**
+In Claude Code (CLI or desktop app), with Python 3.9+ on your PATH:
 
 ```
-/plugin marketplace add alexgreensh/token-optimizer
-/plugin install token-optimizer@alexgreensh-token-optimizer
+/plugin marketplace add iBisho/token-optimizer-native-mixed
+/plugin install token-optimizer@token-optimizer-native-mixed
 ```
 
 Then in Claude Code: `/token-optimizer`
 
-> **Enable auto-update after installing.** Claude Code ships third-party marketplaces with auto-update off by default. `/plugin` → **Marketplaces** tab → select `alexgreensh-token-optimizer` → **Enable auto-update**. One-time, 10 seconds.
+> **Enable auto-update after installing.** Claude Code ships third-party marketplaces with auto-update off by default. `/plugin` → **Marketplaces** tab → select `token-optimizer-native-mixed` → **Enable auto-update**.
 >
-> After install, run `/token-optimizer` once to set up hooks. From there, everything runs automatically: compression, checkpoints, quality scoring, dashboard updates. You don't need to run any command again unless you want an audit.
+> After install, run `/token-optimizer` once to set up hooks. From there, everything runs automatically: compression, checkpoints, quality scoring, dashboard updates.
 
-> **Claude Code cloud sessions (claude.ai/code).** Cloud sessions load no plugins, not yours and not ones a repo enables, so the commands above don't reach them. Paste one setup script into your cloud environment instead and every session in it, any repo, runs the real Token Optimizer:
->
-> 1. Run `python3 measure.py cloud-setup-script` (or ask Claude for "the Token Optimizer cloud setup script").
-> 2. Paste the output into claude.ai/code → your environment → **Setup script**.
->
-> The script fetches the `@alexgreensh/token-optimizer` npm package (the plugin itself, same version), checks its sha512 before running anything, and wires the same hooks as `hooks/hooks.json` into the VM. Nothing is committed to your repos, and it never fails your setup. State lives in the VM, so each cloud session starts fresh. [Details](https://alexgreensh.github.io/token-optimizer/install/claude-code-cloud/)
+> **Coming from the original plugin?** Uninstall it first (`/plugin uninstall token-optimizer@alexgreensh-token-optimizer`) so the two do not run the same hooks twice. Its data lives in `~/.claude/plugins/data/token-optimizer-alexgreensh-token-optimizer`; copy that folder to `token-optimizer-token-optimizer-native-mixed` to keep your history and savings ledger.
 
-<details>
-<summary><b>Other platforms and install methods</b></summary>
-
-**Codex:**
-```bash
-codex plugin marketplace add alexgreensh/token-optimizer
-```
-Then in the Codex TUI: `/plugins` and install Token Optimizer. See [`docs/codex.md`](docs/codex.md).
-
-**OpenCode V2:** add `token-optimizer-opencode` to the `plugins` array in your `opencode.json` (V1 1.18.29+ uses `plugin`):
-```jsonc
-{ "$schema": "https://opencode.ai/config.json", "plugins": ["token-optimizer-opencode"] }
-```
-See [`opencode/README.md`](opencode/README.md).
-
-**OpenClaw:**
-```bash
-openclaw plugins install github:alexgreensh/token-optimizer
-```
-See [`openclaw/README.md`](openclaw/README.md).
-
-**Hermes:**
-```bash
-git clone https://github.com/alexgreensh/token-optimizer.git
-token-optimizer/install.sh --hermes
-```
-Terminal output compression, cheaper re-reads, loop warnings, checkpoints that survive compaction, prior-session hints, and the dashboard, through Hermes's own plugin hooks. See [`hermes/README.md`](hermes/README.md).
-
-**Pi Coding Agent:**
-```bash
-pi install git:github.com/alexgreensh/token-optimizer
-```
-Then run `/token-optimizer enable` to opt in. Native model costs are reported on the active branch; local tool archives and continuity markers require separate opt-in. See [`pi/README.md`](pi/README.md) for commands, privacy, update, uninstall, and limits.
-
-**GitHub Copilot:**
-```bash
-git clone --depth 1 https://github.com/alexgreensh/token-optimizer.git
-cd token-optimizer
-bash install.sh --copilot
-```
-See [`docs/copilot.md`](docs/copilot.md).
-
-**Cursor:**
-```bash
-git clone --depth 1 https://github.com/alexgreensh/token-optimizer.git
-cd token-optimizer
-bash install.sh --cursor
-```
-See [`docs/cursor.md`](docs/cursor.md).
-
-**Google Antigravity:**
-```bash
-git clone --depth 1 https://github.com/alexgreensh/token-optimizer.git
-cd token-optimizer
-bash install.sh --antigravity
-```
-See [`docs/antigravity.md`](docs/antigravity.md).
-
-**Grok Build (beta, contract-only):**
-```bash
-git clone --depth 1 https://github.com/alexgreensh/token-optimizer.git
-cd token-optimizer
-bash install.sh --grok
-```
-See [`docs/grok.md`](docs/grok.md).
-
-**macOS/Linux script install (alternative to plugin):**
-```bash
-tmp="$(mktemp -d)"
-release_json="$(curl -fsSL https://api.github.com/repos/alexgreensh/token-optimizer/releases/latest)"
-tag="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])' <<<"$release_json")"
-git clone --branch "$tag" --depth 1 https://github.com/alexgreensh/token-optimizer.git ~/.claude/token-optimizer
-bash ~/.claude/token-optimizer/install.sh
-rm -rf "$tmp"
-```
-
-**Windows users:** Use the plugin install only. Do not run `install.sh` on Windows. If you hit `EBUSY` errors, close all Claude Code and Git Bash windows, kill lingering `git.exe` processes, delete `C:\Users\<you>\.claude\token-optimizer` and `C:\Users\<you>\.claude\plugins\marketplaces\alexgreensh-token-optimizer`, then retry.
-
-**If `install.sh` fails with `$'\r': command not found`** (a clone made before LF line endings were enforced converted the script to CRLF), strip the carriage returns once and re-run — the repo now ships a `.gitattributes` that prevents this on fresh clones:
-```bash
-sed -i 's/\r$//' ~/.claude/token-optimizer/install.sh
-# already have the repo? re-normalize line endings in place:
-git -C ~/.claude/token-optimizer add --renormalize . && git -C ~/.claude/token-optimizer checkout -- .
-```
-
-</details>
+The native binary needs no setup: the plugin picks the one for your OS from
+`native/bin`. To build it yourself, see [native/README.md](native/README.md).
 
 <details>
 <summary>Uninstall</summary>
 
-Token Optimizer is additive and reversible. Every runtime has a clean uninstall
-that removes only what we installed, leaving your own hooks, config, and session
-data intact. Full per-runtime steps live in **[docs/uninstall.md](docs/uninstall.md)**.
-
-Quickest path (Claude Code plugin install):
+Token Optimizer is additive and reversible: uninstalling removes only what it
+installed, leaving your own hooks, config, and session data intact. Details in
+**[docs/uninstall.md](docs/uninstall.md)**.
 
 ```
-/plugin uninstall token-optimizer@alexgreensh-token-optimizer
+/plugin uninstall token-optimizer@token-optimizer-native-mixed
 ```
 
 </details>
+
+## Credits and license
+
+Token Optimizer is by [Alex Greenshpun](https://github.com/alexgreensh/token-optimizer)
+(Required Notice: Copyright Alex Greenshpun, https://linkedin.com/in/alexgreensh).
+This edition adds the native layer in `native/` and the Claude Code-only packaging.
+Both are distributed under the original's license,
+[PolyForm Noncommercial 1.0.0](LICENSE) (with the
+[small-business permission](LICENSE-SMALL-BUSINESS.md)): free for noncommercial
+use; for commercial licensing contact the original author.
 
 ## How It's Different
 

@@ -1,0 +1,54 @@
+name: Native
+
+# Checks that the toidx sources (native/toidx) format, vet, build and run on
+# the three desktop platforms. The shipped binaries are built locally and
+# committed in native/bin (native/README.md, "Build"). The Python tests that
+# compare the native paths against upstream need a real transcript history,
+# so they run locally (native/README.md, "Verify").
+on:
+  push:
+    branches: [main]
+    paths: ['native/**', '.github/workflows/native.yml']
+  pull_request:
+    paths: ['native/**', '.github/workflows/native.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            out: toidx.exe
+          - os: ubuntu-latest
+            out: toidx
+          - os: macos-latest
+            out: toidx
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: native/toidx
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: native/toidx/go.mod
+          cache-dependency-path: native/toidx/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: vet
+        run: go vet ./...
+      - name: build
+        run: go build -trimpath -ldflags="-s -w" -o "dist/${{ matrix.out }}" .
+      - name: smoke
+        run: test "$(./dist/${{ matrix.out }} version)" -ge 2
+      - uses: actions/upload-artifact@v5
+        with:
+          name: toidx-${{ runner.os }}
+          path: native/toidx/dist/${{ matrix.out }}

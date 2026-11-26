@@ -1,27 +1,18 @@
 name: Refresh model prices
 
-# Keeps every engine's price table current without a human editing it.
-#
-# Once a day this rebuilds skills/token-optimizer/pricing/prices.json (plus the
-# generated OpenClaw/OpenCode tables) from Anthropic's pricing page and the
-# LiteLLM price feed. Nothing changed: the run ends. Prices changed within the
-# safety valve and every test passes: it bumps the patch version, releases, and
-# dispatches signing, exactly like a manual release. A price moving beyond 2x,
-# a model disappearing, or any test failing: it opens a PR for a human instead.
-#
-# All fetching happens here, in CI. The plugin only reads the bundled file, so
-# users get new prices through their normal update with zero runtime network.
+# Once a day, rebuild skills/token-optimizer/pricing/prices.json from
+# Anthropic's pricing page and the LiteLLM price feed. When prices changed,
+# run the tests and open (or update) one review PR. Nothing is released
+# automatically. The plugin only reads the bundled file: no runtime network.
 on:
   schedule:
     - cron: "23 6 * * *"
   workflow_dispatch:
 
 permissions:
-  contents: write        # commit, tag, release
-  pull-requests: write   # review PR when the safety valve trips
-  actions: write         # dispatch sign-release (GITHUB_TOKEN releases do not trigger it)
+  contents: write
+  pull-requests: write
 
-# One refresh at a time; a slow run is never cancelled mid-release.
 concurrency:
   group: refresh-prices
   cancel-in-progress: false
@@ -31,11 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -49,123 +37,33 @@ jobs:
           echo "code=$code" >> "$GITHUB_OUTPUT"
           case "$code" in
             0)  echo "No price changes." ;;
-            10) echo "Prices changed within the safety valve." ;;
-            3)  echo "Prices changed beyond the safety valve; a human reviews this one." ;;
+            10|3) echo "Prices changed." ;;
             *)  echo "::error::refresh_prices.py failed ($code); nothing written."; exit "$code" ;;
           esac
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        if: steps.refresh.outputs.code != '0'
-        with:
-          node-version: 22
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        if: steps.refresh.outputs.code != '0'
-
-      - name: Regenerate compiled output and mirrors
-        if: steps.refresh.outputs.code != '0'
-        run: |
-          set -euo pipefail
-          (cd openclaw && npm ci --ignore-scripts && npm run build)
-          bash scripts/sync-codex-marketplace-plugin.sh
-          python3 - <<'PY'
-          import sys
-          from pathlib import Path
-          sys.path.insert(0, "skills/token-optimizer/scripts")
-          import cowork_install
-          cowork_install.build_committed_plugin(Path(".").resolve())
-          PY
-
-      - name: Run the test suites
+      - name: Run the tests
         id: tests
         if: steps.refresh.outputs.code != '0'
         continue-on-error: true
         run: |
-          set -euo pipefail
           python -m pip install --quiet pytest
           python -m pytest tests/ -q
-          (cd openclaw && for f in $(find src -name '*.test.*' | sort); do bun test "./$f"; done)
-          (cd opencode && bun install --frozen-lockfile --ignore-scripts && bun test)
 
-      - name: Release the new prices
-        if: steps.refresh.outputs.code == '10' && steps.tests.outcome == 'success'
+      - name: Open a review PR
+        if: steps.refresh.outputs.code != '0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          VERSION=$(python3 scripts/bump_patch_version.py)
-          TAG="v${VERSION}"
-          # The bump also updates the OpenClaw fallback in TypeScript. The
-          # earlier build/test ran before it; rebuild the shipped dist and gate
-          # the new labels before tagging and publishing.
-          (cd openclaw && npm run build)
-          python -m pytest tests/test_version_constant_tracks_manifest.py -q
-          bash scripts/sync-codex-marketplace-plugin.sh
-          python3 - <<'PY'
-          import sys
-          from pathlib import Path
-          sys.path.insert(0, "skills/token-optimizer/scripts")
-          import cowork_install
-          cowork_install.build_committed_plugin(Path(".").resolve())
-          PY
-          python3 - "$VERSION" "$RUNNER_TEMP/prices-summary.md" "$RUNNER_TEMP/release-notes.md" <<'PY'
-          import sys, datetime
-          from pathlib import Path
-          version, summary, notes_path = sys.argv[1], Path(sys.argv[2]).read_text(), Path(sys.argv[3])
-          # Release notes stay one line: which models got current prices, by name.
-          models = []
-          for l in summary.splitlines():
-              if l.startswith("- ") and "->" in l and "." in l.split(":")[0]:
-                  name = l[2:].split(":")[0].split(".", 1)[1]
-                  if name not in models:
-                      models.append(name)
-          shown = ", ".join(models[:8]) + (f" and {len(models) - 8} more" if len(models) > 8 else "")
-          line = f"- Up-to-date model prices: {shown}."
-          notes_path.write_text(line + "\n")
-          entry = [f"## [{version}] - {datetime.date.today().isoformat()}", "", line]
-          path = Path("CHANGELOG.md")
-          text = path.read_text()
-          head = "# Changelog\n\n"
-          assert text.startswith(head)
-          path.write_text(head + "\n".join(entry) + "\n\n" + text[len(head):])
-          PY
-          git add -A
-          git commit -m "chore(prices): automatic price refresh, release ${TAG}"
-          git tag "$TAG"
-          # Commit and tag land together or not at all (--atomic), so a failed
-          # push never leaves a version bump on main with no tag. One retry if
-          # main moved since checkout, re-tagging the rebased commit; any
-          # conflict fails loudly.
-          if ! git push --atomic origin HEAD:main "refs/tags/$TAG"; then
-            git pull --rebase origin main
-            git tag -f "$TAG"
-            git push --atomic origin HEAD:main "refs/tags/$TAG"
-          fi
-          gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
-          # Run from the tag: the npm-publish environment only accepts v* refs.
-          gh workflow run sign-release.yml --ref "$TAG" -f tag="$TAG"
-          echo "Released $TAG and dispatched signing."
-
-      - name: Open a review PR instead
-        if: steps.refresh.outputs.code == '3' || (steps.refresh.outputs.code == '10' && steps.tests.outcome != 'success')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # One standing branch: an unreviewed change updates the same PR daily
-          # instead of opening a new one each morning.
           BRANCH="prices/refresh-review"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -C "$BRANCH"
           git add -A
-          git commit -m "chore(prices): price refresh needs review"
+          git commit -m "chore(prices): refresh model prices"
           git push --force origin "$BRANCH"
           {
-            echo "The daily price refresh did not ship automatically."
+            echo "The daily price refresh found changes."
             echo
             if [ "${{ steps.tests.outcome }}" != "success" ]; then
               echo "**Tests failed with the new prices.** Check the workflow run log."
@@ -175,5 +73,5 @@ jobs:
           } > "$RUNNER_TEMP/pr-body.md"
           gh pr view "$BRANCH" >/dev/null 2>&1 \
             || gh pr create --base main --head "$BRANCH" \
-                 --title "Price refresh needs review" \
+                 --title "Refresh model prices" \
                  --body-file "$RUNNER_TEMP/pr-body.md"

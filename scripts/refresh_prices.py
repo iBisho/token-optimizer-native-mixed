@@ -14,8 +14,6 @@ Sources:
 
 Outputs (all generated, never edited by hand):
   skills/token-optimizer/pricing/prices.json   Python engines (measure.py, fleet.py)
-  openclaw/src/prices.generated.ts              OpenClaw engine
-  opencode/src/prices.generated.ts              OpenCode engine
 
 Safety valve: a price that moves by more than 2x, or a model that disappears,
 is not shipped automatically. Exit code 3 tells the workflow to open a PR for a
@@ -38,8 +36,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 PRICES_JSON = REPO / "skills" / "token-optimizer" / "pricing" / "prices.json"
-TS_OUTPUTS = [REPO / "openclaw" / "src" / "prices.generated.ts",
-              REPO / "opencode" / "src" / "prices.generated.ts"]
+TS_OUTPUTS = []  # the OpenClaw/OpenCode engines are not part of this repo
 
 LITELLM_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
 ANTHROPIC_URL = "https://platform.claude.com/docs/en/about-claude/pricing.md"

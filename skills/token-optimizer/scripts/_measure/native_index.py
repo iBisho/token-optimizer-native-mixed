@@ -40,9 +40,21 @@ def binary():
     override = os.environ.get(_BINARY_ENV)
     if override:
         return Path(override) if Path(override).is_file() else None
-    root = Path(__file__).resolve().parents[4]
-    candidate = root / "native" / "bin" / ("toidx.exe" if sys.platform == "win32" else "toidx")
-    return candidate if candidate.is_file() else None
+    bindir = Path(__file__).resolve().parents[4] / "native" / "bin"
+    if sys.platform == "win32":
+        names = ["toidx.exe"]
+    else:
+        import platform
+        arch = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine().lower())
+        osname = "darwin" if sys.platform == "darwin" else "linux" if sys.platform.startswith("linux") else None
+        names = ["toidx"]  # a local build wins over the committed one
+        if arch and osname:
+            names.append(f"toidx-{osname}-{arch}")
+    for name in names:
+        candidate = bindir / name
+        if candidate.is_file() and (sys.platform == "win32" or os.access(candidate, os.X_OK)):
+            return candidate
+    return None
 
 
 def _key(path):

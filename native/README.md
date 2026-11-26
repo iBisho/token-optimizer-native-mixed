@@ -1,6 +1,7 @@
-# Native fast paths (fork of alexgreensh/token-optimizer)
+# Native fast paths
 
-This fork keeps upstream's Python code and adds one Go binary, `toidx`
+This edition keeps the original's Python code (alexgreensh/token-optimizer,
+"upstream" below) and adds one Go binary, `toidx`
 (one dependency: `github.com/valyala/fastjson`), for the three things that made
 `measure.py dashboard --user` take 5+ minutes on Windows:
 
@@ -127,17 +128,25 @@ unchanged.
 
 ## Build
 
-Requires Go 1.23+ (range-over-func); `go build` fetches fastjson, pinned in
+Requires Go 1.24+ (see `go.mod`); `go build` fetches fastjson, pinned in
 `go.sum`. From the repo root:
 
 ```powershell
 cd native/toidx; go build -trimpath -ldflags="-s -w" -o ../bin/toidx.exe .
 ```
 
-On macOS/Linux build `../bin/toidx` instead. The Python side looks for
-`native/bin/toidx(.exe)` relative to the plugin root. `native/bin/` is
-committed for Windows so the installed plugin works without a Go toolchain;
-rebuild it after changing the Go code.
+`native/bin/` is committed, so the installed plugin needs no Go toolchain:
+`toidx.exe` (Windows) and `toidx-<linux|darwin>-<amd64|arm64>`. The Python
+side (`native_index.binary()`) picks the one for the running OS and CPU; a
+local build named `native/bin/toidx` wins on macOS/Linux. After changing the
+Go code, rebuild all five from Windows (PowerShell, from `native/toidx`):
+
+```powershell
+go build -trimpath -ldflags="-s -w" -o ../bin/toidx.exe .; foreach ($t in "linux/amd64","linux/arm64","darwin/amd64","darwin/arm64") { $o, $a = $t.Split("/"); $env:GOOS = $o; $env:GOARCH = $a; go build -trimpath -ldflags="-s -w" -o "../bin/toidx-$o-$a" . }; Remove-Item Env:GOOS, Env:GOARCH
+```
+
+New macOS/Linux files need the executable bit in git:
+`git update-index --chmod=+x native/bin/toidx-*`.
 
 ## Verify
 
@@ -160,7 +169,9 @@ python native/tests/compare_dashboard.py
 Transcripts of sessions that are running while a test runs can differ
 between the two reads; the tests retry those.
 
-## Fork changes (keep this list short; it is the merge surface)
+## Changes from upstream
+
+Native layer:
 
 - `native/` (new): Go source, binary, tests, this README.
 - `_measure/native_index.py` (new): projection cache client.
@@ -177,21 +188,38 @@ between the two reads; the tests retry those.
 - `_measure/nudge_followthrough.py`: `_project_index` warms, `_rows` reads `nudge`.
 - `_measure/daemon.py`: `_native_procs_csv` replaces the three PowerShell calls.
 
-Upstream mirrors `skills/` into `plugins/token-optimizer/` and
-`cowork/token-optimizer/`; this fork only edits `skills/` (the copy the
-installed plugin runs).
+Packaging (Claude Code only):
 
-## Syncing with upstream
+- Removed: the Codex, Cowork, OpenCode, OpenClaw, Pi, VS Code, Copilot,
+  Cursor, Devin, Hermes and Antigravity adapters and mirrors, the docs site,
+  npm packaging, release signing and `install.sh`. The Python code under
+  `skills/` that serves other runtimes is untouched (it is inert here).
+- `.claude-plugin/`: own marketplace `token-optimizer-native-mixed`.
+- `README.md`: this edition's header, install and credits.
+- `.github/workflows/`: `tests.yml` (pytest on Linux and Windows),
+  `native.yml` (gofmt, vet and build of `toidx` on the three platforms),
+  `refresh-prices.yml` (daily price refresh as a review PR),
+  `file-size.yml` (upstream's line limit).
+- `scripts/refresh_prices.py`: writes only `prices.json`.
+- `scripts/check_measure_split_payload.py`: lists the two new `_measure`
+  modules.
+
+## Taking changes from upstream
+
+Upstream is not followed automatically. To bring in a change:
 
 ```powershell
 git fetch upstream
 git merge upstream/main
+git rm -rq --ignore-unmatch plugins cowork opencode openclaw pi vscode-extension docs-site packaging
+git commit
 python native/tests/equivalence.py 30
 python native/tests/compute_equivalence.py 30
 python native/tests/product_equivalence.py 30
 ```
 
-Conflicts can only happen in the files listed above. When upstream changes a
+Upstream changes to removed folders come back as modify/delete conflicts;
+resolve them by removing the files again. When upstream changes a
 ported function, port the change to the matching Go file; when it changes
 what a reader reads, update its projection profile in `main.go`, bump
 `formatVersion` there and `FORMAT_VERSION` in `native_index.py`, rebuild and

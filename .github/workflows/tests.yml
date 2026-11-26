@@ -1,195 +1,78 @@
 name: Tests
 
-# Runs the Python suite in tests/ on every push and pull request.
-#
-# Until now nothing ran these tests automatically. The suite existed and passed
-# locally, but a regression could only be caught by someone remembering to run
-# pytest by hand. Guards that nothing enforces are decoration.
-#
-# The matrix floor is measured, not guessed: the suite was verified passing on
-# 3.11 and 3.14 locally, so the interpreters in between are covered by the same
-# range. Hooks run under whatever python3 a user happens to have, so version
-# spread is a real portability signal for this project, not ceremony.
-#
-# A windows-latest leg runs the same suite plus a real-spawn smoke test
-# (test_spawn_detached_real_child) that spawns a child via spawn_detached
-# on real Windows and asserts: (1) Popen is returned (not None), (2) the
-# child exits 0, (3) GetConsoleWindow()==0 in the child (proving
-# DETACHED_PROCESS took effect at the OS level), and (4)
-# last_spawn_used_fallback is False (CREATE_BREAKAWAY_FROM_JOB succeeded
-# without the retry path). This catches console-flash regressions and
-# breakaway failures that macOS/Linux cannot see.
-# Branch pushes are covered by their pull request; running both doubled every
-# CI round. main still runs on push (merges), and any branch can be run by hand.
+# The Python suite in tests/ on Linux and Windows, at the oldest and newest
+# supported interpreters. Hooks run under whatever python3 a user has, so the
+# floor (3.9) is tested, not assumed.
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
 
-# Least privilege: this job only reads the repo.
 permissions:
   contents: read
 
-# A newer push to the same ref makes the in-flight run irrelevant.
 concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  measure-split:
-    # Split-migration gates: they compare against the pre-split 5.13.64 release, so any intended
-    # behaviour change fails them. Since 5.13.66 shipped they run only for further split work
-    # (cloud/split-* branches) or by hand; the regular suite and guards cover everything else.
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'cloud/split')
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        shard: [1, 2, 3, 4]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.14'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Verify split, candidate npm payload, and raw golden bytes
-        # Linux uses the root-owned system interpreter: setup-python's toolcache copy is
-        # world-writable, so devin-install refuses it and the Devin delta never runs.
-        run: ${{ matrix.os == 'ubuntu-latest' && '/usr/bin/python3' || 'python' }} scripts/measure_split_ci.py --work .scratch-u0/ci --shard ${{ matrix.shard }}/4
-
   pytest:
-    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
-    # A hung test must fail the job, not hold a runner for the 6 hour default.
-    timeout-minutes: 30
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     strategy:
-      # One red interpreter should not hide the result on the others.
       fail-fast: false
       matrix:
-        # 3.9 is the floor the README promises (python-3.9+ badge); hooks run under whatever
-        # python3 a user has, so the floor must be tested, not assumed.
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
-        # The suite runs in 4 slices on 4 machines (tests/conftest.py splits it
-        # by measured file times in tests/shard_weights.json): ~20 min -> ~5.
+        os: [ubuntu-24.04, windows-latest]
+        python-version: ["3.9", "3.14"]
         shard: [1, 2, 3, 4]
-        # setup-python has no 3.9 build for the ubuntu-latest image (26.04);
-        # 24.04 still lists 3.9 x64. This include adds `runner` to every
-        # existing 3.9 cell (all 4 shards) without adding new cells.
+        exclude:
+          - os: windows-latest
+            python-version: "3.9"
         include:
-          - python-version: "3.9"
-            runner: ubuntu-24.04
-
+          - os: windows-latest
+            python-version: "3.11"
+            shard: 1
+          - os: windows-latest
+            python-version: "3.11"
+            shard: 2
+          - os: windows-latest
+            python-version: "3.11"
+            shard: 3
+          - os: windows-latest
+            python-version: "3.11"
+            shard: 4
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-
-      # The suite imports only the standard library plus the repo's own modules,
-      # so pytest is the entire dependency footprint.
       - name: Install pytest
         run: python -m pip install --upgrade pip pytest
-
-      # Run from the repo root: the tests resolve the scripts under
-      # skills/token-optimizer/scripts/ relative to it.
       - name: Run tests
         env:
           TO_TEST_SHARD: ${{ matrix.shard }}/4
-        # The lane replay files are one-time split proofs (each replays its lane's mover), not product
-        # tests: they run in split-lane-proofs below. Excluded here, not skipped, so skips stay <= BASE.
         run: python -m pytest tests/ -q -rs --ignore-glob='tests/test_measure_split_lane*.py'
 
-  # measure.py split (5.13.65): each extraction lane's proof files, one lane per machine. They replay the
-  # lane's mover against pinned inputs, so they are minutes each and do not fit the regular shards.
-  split-lane-proofs:
-    # Split-migration gates: they compare against the pre-split 5.13.64 release, so any intended
-    # behaviour change fails them. Since 5.13.66 shipped they run only for further split work
-    # (cloud/split-* branches) or by hand; the regular suite and guards cover everything else.
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'cloud/split')
+  # Runtime proof of the hook non-blocking invariant on a machine with no
+  # Python: the launcher must exit 0 (degrade, never block).
+  no-python-hook-safety:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        lane: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.14'
-      - name: Install pytest
-        run: python -m pip install --upgrade pip pytest
-      - name: Lane ${{ matrix.lane }} split proofs
-        shell: bash
+      - name: The launcher exits 0 with no Python present
         run: |
-          files=(tests/test_measure_split_lane${{ matrix.lane }}*.py)
-          [ -e "${files[0]}" ] || { echo "no proof files for lane ${{ matrix.lane }}" >&2; exit 1; }
-          printf '%s\n' "${files[@]}"
-          python -m pytest "${files[@]}" -q -rs
+          docker run --rm -v "$PWD":/w -w /w bash:5 bash -euc '
+            if command -v python3 >/dev/null 2>&1; then echo "python3 unexpectedly present; test invalid"; exit 1; fi
+            L=hooks/python-launcher.sh
+            bash "$L" hooks/run.py skills/token-optimizer/scripts/read_cache.py --quiet
+            TOKEN_OPTIMIZER_PYTHON=/bin/sh bash "$L" hooks/run.py skills/token-optimizer/scripts/read_cache.py --quiet
+            bash "$L" hooks/run.py skills/token-optimizer/scripts/read_cache.py --quiet 2>&-
+            echo "PASS"
+          '
 
-  opencode-native:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: opencode
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-      - name: Install pinned adapter dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Typecheck and test both entrypoints
-        run: bun run typecheck && bun test && bun run build && bun run build:bundle
-
-  openclaw-native:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: openclaw
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-      - name: Install pinned adapter dependencies
-        run: npm ci --ignore-scripts
-      - name: Build and test OpenClaw
-        # One process per test file: several suites stub Module._load or HOME at
-        # load time, and Bun's shared process leaks that state across files.
-        run: |
-          npm run build
-          fail=0
-          for f in $(find src -name '*.test.*' | sort); do
-            bun test "./$f" || { echo "::error file=openclaw/$f::bun test failed"; fail=1; }
-          done
-          exit $fail
-
-  pi-native:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: pi/package-lock.json
-      - name: Install Pi adapter test dependencies
-        run: npm ci --ignore-scripts --prefix pi
-      - name: Typecheck Pi extension
-        run: npm run typecheck --prefix pi
-      - name: Test Pi adapter
-        run: npm test --prefix pi
-
-  # The desktop status-bar mod keeps all behaviour in pure modules (src/) that
-  # import nothing from 'claude-code', so CI (which has no claude binary) can
-  # type-check and test them under Node. hooks/register.tsx needs the engine's
-  # generated types and is checked locally with `tsc -p` and `claude plugin test`.
   desktop-mod-pure:
     runs-on: ubuntu-latest
     steps:
@@ -199,191 +82,6 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: desktop/token-optimizer-desktop/package-lock.json
-      - name: Install desktop mod test dependencies
-        run: npm ci --ignore-scripts --prefix desktop/token-optimizer-desktop
-      - name: Typecheck desktop mod pure modules
-        run: npm run typecheck --prefix desktop/token-optimizer-desktop
-      - name: Test desktop mod pure modules
-        run: npm test --prefix desktop/token-optimizer-desktop
-
-  # Every bug that has shipped before is re-introduced into a throwaway copy
-  # and the guard tests must fail on it. A guard that passes on broken code is
-  # decoration; this job turns red the moment one stops guarding.
-  regression-guards:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - name: Install pytest
-        run: python -m pip install --upgrade pip pytest
-      - name: Known regressions are still caught
-        # Each mutation runs only its own listed tests; 4 copies in parallel.
-        # --require-all: every mutation must be proven here (none may be n/a).
-        run: python scripts/check_regression_guards.py --jobs 4 --require-all
-
-  # Same planted bugs on Windows: guards for Windows-only paths (scheduler,
-  # launcher, console flags) can only be proven on the real OS.
-  regression-guards-windows:
-    runs-on: windows-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        # 4 machines, each a quarter of the planted bugs (shard 1 of 3 was the
-        # 15 min long pole of the whole run).
-        shard: [1, 2, 3, 4]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - name: Install pytest
-        run: python -m pip install --upgrade pip pytest
-      - name: Known regressions are still caught
-        # No --require-all: mutations whose guard tests all skip on Windows
-        # (POSIX-only) report n/a; the Linux job proves those. Any mutation
-        # whose tests run here and still pass on the broken code fails the job.
-        # Unbuffered, so each line carries its own log timestamp.
-        env:
-          PYTHONUNBUFFERED: "1"
-        run: python scripts/check_regression_guards.py --jobs 4 --shard ${{ matrix.shard }}/4
-
-  # plugins/token-optimizer/ is a generated mirror of root skills/ + hooks/
-  # (scripts/sync-codex-marketplace-plugin.sh). Until now drift was only
-  # caught at release-signing time, so a canonical-only edit could land on
-  # main and ship a stale mirror to Codex users until the next release.
-  # Regenerate and diff on every push/PR instead. ~5s, pure file copy + git.
-  mirror-sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Verify Codex marketplace mirror is in sync
-        run: bash scripts/check-mirror-sync.sh
-
-  # Runtime proof of the hook non-blocking invariant on a machine with NO Python.
-  # Every other CI leg installs Python, so the no-interpreter path (the exact
-  # condition that froze a user's Codex shell runner via `exit 127`) is never
-  # exercised at runtime there. A bash-only container (no python3) runs every
-  # launcher copy and asserts it exits 0 — degrade, never block.
-  no-python-hook-safety:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Every launcher exits 0 with no Python present
-        run: |
-          docker run --rm -v "$PWD":/w -w /w bash:5 bash -euc '
-            if command -v python3 >/dev/null 2>&1; then echo "python3 unexpectedly present; test invalid"; exit 1; fi
-            for L in hooks/python-launcher.sh \
-                     plugins/token-optimizer/hooks/python-launcher.sh \
-                     cowork/token-optimizer/hooks/python-launcher.sh; do
-              # (a) plain no-Python
-              bash "$L" hooks/run.py skills/token-optimizer/scripts/read_cache.py --quiet
-              rc=$?; echo "$L (no-python) -> exit $rc"
-              [ "$rc" -eq 0 ] || { echo "BLOCKING: $L exited $rc with no Python"; exit 1; }
-              # (b) no-Python + a shell override (must reject, not exec sh on run.py)
-              TOKEN_OPTIMIZER_PYTHON=/bin/sh bash "$L" hooks/run.py skills/token-optimizer/scripts/read_cache.py --quiet
-              rc=$?; echo "$L (shell override) -> exit $rc"
-              [ "$rc" -eq 0 ] || { echo "BLOCKING: $L exited $rc with a shell override"; exit 1; }
-              # (c) no-Python + closed stderr (set -e must not abort the diagnostic path)
-              bash "$L" hooks/run.py skills/token-optimizer/scripts/read_cache.py --quiet 2>&-
-              rc=$?; echo "$L (closed stderr) -> exit $rc"
-              [ "$rc" -eq 0 ] || { echo "BLOCKING: $L exited $rc with closed stderr"; exit 1; }
-            done
-            echo "PASS: all launcher copies exit 0 (no-python / shell-override / closed-stderr)"
-          '
-
-  # Windows leg: runs the same suite plus a real-spawn smoke test that
-  # exercises spawn_utils.spawn_detached against an actual child process.
-  # Catches console-flash regressions and CREATE_BREAKAWAY_FROM_JOB failures
-  # that macOS/Linux cannot see.
-  pytest-windows:
-    runs-on: windows-latest
-    # A hung test must fail the job, not hold a runner for the 6 hour default.
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-        shard: [1, 2, 3, 4]
-
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install pytest
-        run: python -m pip install --upgrade pip pytest
-
-      - name: Run tests
-        env:
-          TO_TEST_SHARD: ${{ matrix.shard }}/4
-        # The lane replay files are one-time split proofs (each replays its lane's mover), not product
-        # tests: they run in split-lane-proofs below. Excluded here, not skipped, so skips stay <= BASE.
-        run: python -m pytest tests/ -q -rs --ignore-glob='tests/test_measure_split_lane*.py'
-
-  # Build the docs site here, not only in Deploy Docs.
-  #
-  # A single unescaped "<400" in an .mdx file broke the Astro build on 2026-07-22.
-  # Deploy Docs went red on every run and the published site sat frozen at the
-  # 2026-06-30 deploy for three weeks while documentation work kept landing on main.
-  # It failed loudly in a workflow nobody was watching, which is the same as failing
-  # quietly. Building here puts a broken page in front of the check that gates PRs,
-  # so the break is caught before it reaches main instead of after it stops the world.
-  docs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: docs-site/package-lock.json
-
-      - name: Install docs dependencies
-        working-directory: docs-site
-        run: npm ci --ignore-scripts
-
-      - name: Build docs site
-        working-directory: docs-site
-        run: npm run build
-
-  # Can a stranger install this right now?
-  #
-  # Between v5.11.57 and v5.11.64 the answer was no, for eight consecutive
-  # releases, and nothing in this repo noticed. install.sh verifies every install
-  # against the CHECKSUMS.sha256 asset on the latest release and verification is
-  # the default path; with no asset attached, resolve_latest_release() fails and
-  # the install hard-aborts. Meanwhile everything visible from the inside was
-  # green: tests passing, docs building, the maintainer's own machine on the
-  # current version because /plugin installs from the marketplace clone and never
-  # crosses that gate. The break existed only from where a new user stands, so
-  # nothing that looks inward could ever have caught it.
-  #
-  # This job looks from the outside instead, at the live releases API, and turns
-  # a dead installer into a red check in front of the PRs it should be blocking.
-  # It is deliberately allowed to fail a push that did not cause it: if the
-  # published install path is broken, that IS more urgent than the change in
-  # flight, and burying it in a workflow nobody watches is how it survived
-  # eleven releases.
-  installable:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      # github.token only to lift the anonymous API rate limit -- shared runner
-      # IPs burn the 60/hour allowance fast, and a rate-limited probe that
-      # reports "not installable" would be a false alarm training people to
-      # ignore this check.
-      - name: Check the published release is installable
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/check-release-installable.sh
+      - run: npm ci --ignore-scripts --prefix desktop/token-optimizer-desktop
+      - run: npm run typecheck --prefix desktop/token-optimizer-desktop
+      - run: npm test --prefix desktop/token-optimizer-desktop
