@@ -1,7 +1,7 @@
 """Definition-only implementations; mutable state belongs to measure."""
 from __future__ import annotations
 from . import _compat, transcript_stream, quality_continuity, upgrade_drain_control
-from . import native_index  # fork: native transcript projections
+from . import native_index, native_compute  # fork: native transcript projections and parsers
 
 
 def _find_all_jsonl_files(days=None):
@@ -583,6 +583,15 @@ def _parse_session_jsonl(filepath, window_start=None, window_end=None):
             _measure_facade._parse_session_jsonl_cache[cache_key] = result
         return result
 
+    # Fork: a result the native port prepared for this exact file version.
+    _native = native_compute.session(filepath, window_start, window_end)
+    if _native is not native_compute.MISS:
+        if cache_key is not None:
+            if len(_measure_facade._parse_session_jsonl_cache) >= _measure_facade._PARSE_CACHE_MAX:
+                _measure_facade._parse_session_jsonl_cache.clear()
+            _measure_facade._parse_session_jsonl_cache[cache_key] = _native
+        return _native
+
     daily_metrics = {}
     skills_used = {}
     subagents_used = {}
@@ -1010,6 +1019,11 @@ def parse_session_turns(filepath):
             turn["cost_usd"] = round(cost, 6)
             turn["cost_source"] = "openai_api_pricing" if cost > 0 else "unavailable"
         return turns
+
+    # Fork: a result the native port prepared for this exact file version.
+    _native = native_compute.turns(filepath)
+    if _native is not native_compute.MISS:
+        return _native
 
     turns = []
     turn_index = 0

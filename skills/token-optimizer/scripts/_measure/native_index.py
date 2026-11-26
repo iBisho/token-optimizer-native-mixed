@@ -25,7 +25,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2  # must match formatVersion in native/toidx/main.go
 PROFILES = ("turns", "product", "nudge", "session")
 _DISABLE_ENV = "TOKEN_OPTIMIZER_NATIVE_INDEX"
 _BINARY_ENV = "TOKEN_OPTIMIZER_TOIDX"
@@ -118,10 +118,11 @@ def warm_window(facade, days=30):
             return None
         files = [Path(fp) for fp, _m, _p in facade._find_all_jsonl_files(days)]
         files += [f for p in list(files) for f in (p.parent / p.stem / "subagents").glob("*.jsonl")]
-        todo = 0
-        for profile in ("session", "turns"):
-            todo += warm(files, profile) or 0
-        return todo
+        # The native parsers build any missing projection themselves.
+        from . import native_compute
+        native_compute.prepare_session(files)
+        native_compute.prepare_turns(files)
+        return len(files)
     except Exception:
         return None
 

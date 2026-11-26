@@ -20,32 +20,15 @@ import (
 var (
 	kernel32                      = syscall.NewLazyDLL("kernel32.dll")
 	ntdll                         = syscall.NewLazyDLL("ntdll.dll")
-	procCreateToolhelp32Snapshot  = kernel32.NewProc("CreateToolhelp32Snapshot")
-	procProcess32FirstW           = kernel32.NewProc("Process32FirstW")
-	procProcess32NextW            = kernel32.NewProc("Process32NextW")
 	procProcessIdToSessionId      = kernel32.NewProc("ProcessIdToSessionId")
 	procQueryFullProcessImageName = kernel32.NewProc("QueryFullProcessImageNameW")
 	procNtQueryInformationProcess = ntdll.NewProc("NtQueryInformationProcess")
 )
 
 const (
-	th32csSnapProcess              = 0x2
 	processQueryLimitedInformation = 0x1000
 	processCommandLineInformation  = 60
 )
-
-type processEntry32 struct {
-	Size            uint32
-	Usage           uint32
-	ProcessID       uint32
-	DefaultHeapID   uintptr
-	ModuleID        uint32
-	Threads         uint32
-	ParentProcessID uint32
-	PriClassBase    int32
-	Flags           uint32
-	ExeFile         [260]uint16
-}
 
 type proc struct {
 	pid, ppid uint32
@@ -53,21 +36,26 @@ type proc struct {
 }
 
 func snapshot() ([]proc, error) {
-	h, _, err := procCreateToolhelp32Snapshot.Call(th32csSnapProcess, 0)
-	if syscall.Handle(h) == syscall.InvalidHandle {
+	h, err := syscall.CreateToolhelp32Snapshot(syscall.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
 		return nil, err
 	}
-	defer syscall.CloseHandle(syscall.Handle(h))
-	var e processEntry32
+	defer syscall.CloseHandle(h)
+	var e syscall.ProcessEntry32
 	e.Size = uint32(unsafe.Sizeof(e))
-	var out []proc
-	r, _, err := procProcess32FirstW.Call(h, uintptr(unsafe.Pointer(&e)))
-	if r == 0 {
+	if err := syscall.Process32First(h, &e); err != nil {
 		return nil, err
 	}
-	for r != 0 {
-		out = append(out, proc{e.ProcessID, e.ParentProcessID, syscall.UTF16ToString(e.ExeFile[:])})
-		r, _, _ = procProcess32NextW.Call(h, uintptr(unsafe.Pointer(&e)))
+	var out []proc
+	for {
+		name := syscall.UTF16ToString(e.ExeFile[:])
+		if e.ProcessID == 0 {
+			name = "System Idle Process" // Toolhelp says "[System Process]"; CIM uses this name
+		}
+		out = append(out, proc{e.ProcessID, e.ParentProcessID, name})
+		if syscall.Process32Next(h, &e) != nil {
+			break
+		}
 	}
 	return out, nil
 }

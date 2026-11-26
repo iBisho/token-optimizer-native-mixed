@@ -10,6 +10,13 @@ def price(facade, conn, start, end, tier):
         if str(path) not in known:
             paths.append((str(path), '', None, None))
             known.add(str(path))
+    try:  # fork: parse every transcript of the pass natively in one call
+        from . import native_compute
+        files = [facade.Path(row[0]) for row in paths]
+        files += [c for p in files if p.exists() for c in facade._find_subagent_jsonl_files(p)]
+        native_compute.prepare_session(files, start, end)
+    except Exception:
+        pass
     rows, missing = [], 0
     costs, missing_cost, cost_complete = 0.0, 0.0, True
     request_ledger = {}

@@ -175,8 +175,8 @@ def _get_cache_ttl_waste(days=None, collect_sessions=None):
     candidate_floor = 300  # scan at the shortest TTL; the observed boundary filters later
 
     if runtime == "claude":
-        from . import native_index  # fork: project every stale transcript in one native pass
-        native_index.warm(files, "turns")
+        from . import native_compute  # fork: parse every transcript natively in one call
+        native_compute.prepare_turns(files)
     for filepath in files:
         try:
             turns = parse_fn(filepath)

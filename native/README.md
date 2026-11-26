@@ -1,73 +1,118 @@
 # Native fast paths (fork of alexgreensh/token-optimizer)
 
-This fork keeps upstream's Python code and adds one small Go binary,
-`toidx`, that removes the two things that made `measure.py dashboard --user`
-take 5+ minutes on Windows:
+This fork keeps upstream's Python code and adds one Go binary, `toidx`
+(one dependency: `github.com/valyala/fastjson`), for the three things that made
+`measure.py dashboard --user` take 5+ minutes on Windows:
 
 1. **Re-reading gigabytes of transcripts on every regen.** Several readers
-   (`parse_session_turns`, `transcript_product.scan`,
-   `nudge_followthrough._rows`) open every raw `.jsonl` in the window, often
-   more than once per regen, although each looks at a handful of fields of a
-   few record kinds.
-2. **Starting PowerShell three times** for the process table
-   (`Get-Process`, two `Get-CimInstance Win32_Process` calls), which costs
+   open every raw `.jsonl` in the window, often more than once per regen,
+   although each looks at a handful of fields of a few record kinds.
+2. **Re-parsing every session in Python on every regen**:
+   `_parse_session_jsonl` (collector, trends, savings, the weekly runway
+   window over all transcripts) and `parse_session_turns` (per-turn cost).
+3. **Starting PowerShell three times** for the process table, which costs
    1-20 s per start on some machines.
 
 ## How it works
 
-### Transcript projections (`toidx -cache DIR`)
+### 1. Transcript projections (`toidx -cache DIR`)
 
 For each reader there is a *profile*. `toidx` reads a transcript once and
 writes a projected copy that keeps exactly the lines and fields that reader
-acts on, for example only assistant records with usage, reduced to
-`type/timestamp/requestId/message.{id,model,usage,content[tool_use].name}`
-for `turns`. 3 GB of transcripts become about 100 MB.
+acts on. 3 GB of transcripts become about 100 MB per profile.
 
-Projections live in `<plugin data>/toidx/<profile>/v1/` and are named
+Projections live in `<plugin data>/toidx/<profile>/v2/` and are named
 `<sha1(profile, path)>.<size>.<mtime_ns>.jsonl`, so a projection is valid
-exactly while the source file is unchanged. A regen only re-projects
-transcripts that changed since the previous one, in one parallel native call
-(`native_index.warm`).
+exactly while the source file is unchanged; only changed transcripts are
+re-projected, in one parallel native call.
 
-The Python readers are unchanged: they read the projection instead of the
-raw file, through the same line reader. Output is identical by construction:
+The Python readers run unchanged over the projection, through the same line
+reader. Output is identical by construction:
 
-- A line is dropped only when the Python reader would certainly skip it
-  (wrong record type, oversized, not an object, no tag).
-- A line is reduced only to fields the reader reads; values are copied as raw
-  JSON, so numbers and strings round-trip byte for byte.
+- A line is dropped only when the Python reader would certainly skip it.
+- A line is reduced only to fields the reader reads. Values are copied as
+  raw JSON bytes, never re-escaped, so a projected line is never longer than
+  its source (the readers have per-line length caps).
 - Anything Go is not sure about (invalid UTF-8, a stray `\r` that text mode
   would split on, JSON Go rejects but Python accepts such as `NaN`) is copied
   verbatim, so Python decides.
-- `turns` skips files over 96 MB: upstream already reads those through its
-  own incremental SQLite index (`transcript_stream.records`), and its partial
-  pass semantics must not change.
+- `turns` and `session` skip files over 96 MB: upstream reads those through
+  its own incremental SQLite index (`transcript_stream.records`).
 
-| Profile   | Python reader                         | Reader semantics mirrored            |
-|-----------|---------------------------------------|--------------------------------------|
-| `turns`   | `sessions.parse_session_turns`        | binary `_raw_lines` (16 MB line cap, 8M char cap) |
-| `product` | `transcript_product.scan`             | text mode, tag pre-filter            |
-| `nudge`   | `nudge_followthrough._rows`           | text mode, every dict row kept (order matters) |
+| Profile   | Python reader                    | Reader semantics mirrored |
+|-----------|----------------------------------|---------------------------|
+| `turns`   | `sessions.parse_session_turns`   | binary `_raw_lines` (16 MB line cap, 8M char cap) |
+| `session` | `sessions._parse_session_jsonl`  | binary `_raw_lines`, every dict record kept |
+| `product` | `transcript_product.scan`        | text mode, tag pre-filter |
+| `nudge`   | `nudge_followthrough._rows`      | text mode, every dict row kept (order matters) |
 
-### Process table (`toidx procs`)
+### 2. Native parsers (`toidx compute`)
+
+`native/toidx/turns.go` and `session.go` are line-for-line ports of
+`parse_session_turns` and `_parse_session_jsonl` (with
+`_aggregate_request_usage`, `_daily_usage_from_merged`,
+`_compute_call_gap_stats`, `_billed_usage_parts`, `_price_usage_parts`,
+`_get_model_cost`, streaming dedup, advisor parts, slash-command skills,
+OSRC detection and time windows). Python calls the binary once per batch
+(`native_compute.prepare_*`) and the two parsers then return the prepared
+result for any file that has not changed since.
+
+What stays in Python on purpose, handed to Go as data in a context file:
+
+- **Which rate card a model string maps to.** Python resolves each model
+  with the plugin's own pricing code and checks the card against
+  `_get_model_cost` on probe vectors before Go may use it. Go only applies the
+  formula (same operation order, every product rounded, no fused ops).
+- **Installed skills** for `_resolve_installed_skill`.
+- **Local time.** A table of UTC offsets built with this interpreter's own
+  `time.localtime`, so "local day" matches `datetime.astimezone()` exactly,
+  DST changes included.
+- **The session topic.** Go returns the first candidate user records and
+  Python runs `_extract_topic(_task_user_text(record))` (credential
+  redaction stays in one place).
+
+Python details the ports reproduce: `measure.py` re-binds some defaults
+(`_price_usage_parts(ttl_split=True)`), `sum()` of floats uses Neumaier
+compensation (3.12+), `round(x, 6)` rounds half to even on the exact binary
+value, `max(0, x)` returns the int `0`, `astimezone()` rounds the timestamp
+to the nearest second, floats are written with `float.__repr__` so they stay
+floats, and dict key order is preserved.
+
+JSON is read with `valyala/fastjson` (one reusable parser per worker, so
+lines are not turned into maps and garbage): with `encoding/json` maps the
+parsers spent 70% of their time decoding and collecting garbage (7 s for
+30 days of `turns`; 2.3 s with fastjson). Each line is first checked with
+the strict `encoding/json` validator, and duplicate keys resolve to the last
+one, as `json.loads` does (fastjson's own `Get` returns the first).
+
+Anything outside the shapes Go reproduces exactly (timestamps not written as
+`YYYY-MM-DDTHH:MM:SS[.fff](Z|±HH:MM)`, numbers stored as strings, lone
+surrogate escapes, integers beyond 2^53, non-string ids, a rate card that
+fails its self-check) makes Go report `fallback` for that file and the
+original Python code computes it.
+
+### 3. Process table (`toidx procs`)
 
 `toidx procs get-process claude | cim claude | names` prints the same CSV
-columns the PowerShell pipelines printed, read with Toolhelp32,
-`QueryFullProcessImageName`, `NtQueryInformationProcess` and
-`GetProcessTimes` (stdlib `syscall` only, no dependencies). 0.15 s instead of
-2-20 s. Paths may differ in letter case from WMI; the callers only `stat`
-them, which is case-insensitive on Windows.
+columns (and row order) the PowerShell pipelines printed, read with
+Toolhelp32, `QueryFullProcessImageName`, `NtQueryInformationProcess` and
+`GetProcessTimes`. 0.15 s instead of 2-20 s. Paths may differ in letter case
+from WMI; the callers only `stat` them, which is case-insensitive on Windows.
 
-### Fallbacks
+### Fallbacks and switches
 
-Everything is fail-open (`skills/token-optimizer/scripts/_measure/native_index.py`):
-no binary, a stale projection or any error means the upstream code path runs
-unchanged. `TOKEN_OPTIMIZER_NATIVE_INDEX=0` disables all native paths;
-`TOKEN_OPTIMIZER_TOIDX=<path>` points at a binary elsewhere.
+Everything is fail-open: no binary, a stale projection, a file that changed
+since it was prepared or any error means the upstream code path runs
+unchanged.
+
+- `TOKEN_OPTIMIZER_NATIVE_INDEX=0` disables every native path.
+- `TOKEN_OPTIMIZER_NATIVE_COMPUTE=0` disables only the native parsers.
+- `TOKEN_OPTIMIZER_TOIDX=<path>` points at a binary elsewhere.
 
 ## Build
 
-Requires Go 1.22+. From the repo root:
+Requires Go 1.23+ (range-over-func); `go build` fetches fastjson, pinned in
+`go.sum`. From the repo root:
 
 ```powershell
 cd native/toidx; go build -trimpath -ldflags="-s -w" -o ../bin/toidx.exe .
@@ -82,19 +127,30 @@ rebuild it after changing the Go code.
 
 ```powershell
 python native/tests/equivalence.py 30
+python native/tests/compute_equivalence.py 30
+python native/tests/compare_dashboard.py
 ```
 
-Runs every projected reader against the raw reader on your real
-transcripts (last N days) and exits 1 on any difference. Transcripts of
-sessions that are running while the test runs can differ between the two
-reads; the test retries those.
+- `equivalence.py`: every projected reader against the raw reader.
+- `compute_equivalence.py`: the native parsers against the untouched Python
+  parsers reading raw files, for whole files and two time windows, with
+  strict equality (types such as `0` vs `0.0`, and dict key order).
+- `compare_dashboard.py`: the whole dashboard data, native off vs on (values
+  that move between two runs, such as timestamps and live sessions, differ).
+
+Transcripts of sessions that are running while a test runs can differ
+between the two reads; the tests retry those.
 
 ## Fork changes (keep this list short; it is the merge surface)
 
 - `native/` (new): Go source, binary, tests, this README.
 - `_measure/native_index.py` (new): projection cache client.
-- `_measure/sessions.py`: `parse_session_turns` reads the `turns` projection.
-- `_measure/cache_policy.py`: `_get_cache_ttl_waste` warms `turns` first.
+- `_measure/native_compute.py` (new): native parser client (context, jobs, results).
+- `_measure/sessions.py`: both parsers return prepared native results; their
+  Python paths read the `turns` / `session` projections.
+- `_measure/dashboard.py`: one batch prepare at the start of a regen.
+- `_measure/cache_policy.py`: `_get_cache_ttl_waste` prepares `turns`.
+- `_measure/weekly_activity.py`: `price` prepares its windowed pass.
 - `_measure/transcript_product.py`: `scan` warms and reads `product`.
 - `_measure/nudge_followthrough.py`: `_project_index` warms, `_rows` reads `nudge`.
 - `_measure/daemon.py`: `_native_procs_csv` replaces the three PowerShell calls.
@@ -109,11 +165,12 @@ installed plugin runs).
 git fetch upstream
 git merge upstream/main
 python native/tests/equivalence.py 30
+python native/tests/compute_equivalence.py 30
 ```
 
-Conflicts can only happen in the files listed above. When upstream changes
-one of the three readers, check whether it now reads a field the profile
-drops (see the profile functions in `native/toidx/main.go`); if so, add the
-field, bump `formatVersion` in `main.go` and `FORMAT_VERSION` in
-`native_index.py` (old projections are then ignored), rebuild, and rerun the
-equivalence test.
+Conflicts can only happen in the files listed above. When upstream changes a
+ported function, port the change to the matching Go file; when it changes
+what a reader reads, update its projection profile in `main.go`, bump
+`formatVersion` there and `FORMAT_VERSION` in `native_index.py`, rebuild and
+rerun the tests. Check `measure.py` for re-bound defaults
+(`_measure_compat.bind(..., defaults=...)`) of any function you port.

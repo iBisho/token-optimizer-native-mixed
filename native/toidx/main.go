@@ -1,20 +1,25 @@
-// toidx: incremental projection cache for Claude Code transcripts.
+// toidx: native fast paths for the Token Optimizer dashboard.
 //
-// Several Python readers in the dashboard pipeline re-read every raw
-// transcript (gigabytes) on each run, although each one only looks at a few
-// fields of a few record kinds. toidx writes, once per (reader profile, path,
-// size, mtime), a projected copy of the transcript that keeps exactly what
-// that reader looks at. The Python reader then runs unchanged over the
-// projection instead of the raw file.
+//  1. Projections (default command). Several Python readers re-read every raw
+//     transcript on each run although each one only looks at a few fields of a
+//     few record kinds. toidx writes, once per (reader profile, path, size,
+//     mtime), a projected copy that keeps exactly what that reader looks at.
+//     The Python reader then runs unchanged over the projection.
 //
-// Exactness rule: a line is dropped or reduced only when the Python reader
-// would certainly treat the projected line (or its absence) the same way.
-// Anything uncertain (invalid UTF-8, a stray "\r", JSON that Go rejects but
-// Python may accept, such as NaN) is copied verbatim so the Python code
-// decides for itself.
+//     Exactness rule: a line is dropped or reduced only when the Python reader
+//     would certainly treat the projected line (or its absence) the same way.
+//     Anything uncertain (invalid UTF-8, a stray "\r", JSON that Go rejects
+//     but Python may accept, such as NaN) is copied verbatim so the Python code
+//     decides for itself. Raw JSON values are copied byte for byte and never
+//     re-escaped, so a projected line is never longer than its source line.
 //
-// Cache layout: <cache>/<profile>/v<N>/<sha1(profile NUL path)[:24]>.<size>.<mtime_ns>.jsonl
-// A file with the exact name is complete (written to a temp file, renamed).
+//     Cache layout: <cache>/<profile>/v<N>/<sha1(profile NUL path)[:24]>.<size>.<mtime_ns>.jsonl
+//     A file with the exact name is complete (written to a temp file, renamed).
+//
+//  2. "toidx compute": native ports of parse_session_turns and
+//     _parse_session_jsonl over the projections (compute.go).
+//
+// 3. "toidx procs": the Windows process table (procs_windows.go).
 package main
 
 import (
@@ -35,12 +40,14 @@ import (
 )
 
 const (
-	formatVersion = 1
+	// v2: projections written without HTML escaping (v1 could grow a line).
+	formatVersion = 2
 	// transcript_stream.LINE_BYTES: the binary-mode raw reader skips lines
 	// longer than this, newline included.
 	lineBytes = 16 * 1024 * 1024
-	// codex_session.MAX_JSONL_LINE_CHARS: parse_session_turns skips decoded
-	// lines with more characters than this (newline included).
+	// codex_session.MAX_JSONL_LINE_CHARS: parse_session_turns and
+	// _parse_session_jsonl skip decoded lines with more characters than this
+	// (newline included).
 	maxLineChars = 8 * 1024 * 1024
 )
 
@@ -60,7 +67,7 @@ var profiles = map[string]profile{
 	"session": {"session", true, projectSession},
 }
 
-// CacheName must match native_index.py:_cache_name.
+// cacheName must match native_index.py:_projection.
 func cacheName(prof, src string, size, mtime int64) string {
 	sum := sha1.Sum([]byte(prof + "\x00" + src))
 	return fmt.Sprintf("%s.%d.%d.jsonl", hex.EncodeToString(sum[:])[:24], size, mtime)
@@ -88,22 +95,24 @@ func object(r raw) (map[string]raw, bool) {
 	return m, true
 }
 
-func pick(src map[string]raw, keys ...string) map[string]raw {
-	out := make(map[string]raw, len(keys))
+// pick keeps the listed keys that are present, in the listed order.
+func pick(src map[string]raw, keys ...string) obj {
+	var o obj
 	for _, k := range keys {
 		if v, ok := src[k]; ok {
-			out[k] = v
+			o = append(o, kv{k, v})
 		}
 	}
-	return out
+	return o
 }
 
-func marshal(m map[string]raw) []byte {
-	b, err := json.Marshal(m)
-	if err != nil {
-		return nil
+func hasKey(o obj, k string) bool {
+	for _, p := range o {
+		if p.k == k {
+			return true
+		}
 	}
-	return b
+	return false
 }
 
 // textLineUnsafe reports whether Python's text-mode iteration could split or
@@ -120,7 +129,7 @@ func toolUseItems(content raw, keys ...string) (raw, bool) {
 	if json.Unmarshal(content, &items) != nil {
 		return nil, false
 	}
-	kept := []raw{}
+	kept := [][]byte{}
 	for _, it := range items {
 		block, ok := object(it)
 		if !ok {
@@ -129,10 +138,35 @@ func toolUseItems(content raw, keys ...string) (raw, bool) {
 		if t, ok := str(block["type"]); !ok || t != "tool_use" {
 			continue
 		}
-		kept = append(kept, marshal(pick(block, keys...)))
+		kept = append(kept, pick(block, keys...).encode())
 	}
-	b, _ := json.Marshal(kept)
-	return b, true
+	return encodeArr(kept), true
+}
+
+// parseLine decodes one physical line for a binary-reader profile. keep=false
+// with out=nil drops the line; a non-nil out is a verbatim copy.
+func parseBinaryLine(line []byte) (rec map[string]raw, out []byte, keep bool) {
+	body := bytes.TrimRight(line, "\n")
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil, nil, false // json.loads fails on blank lines
+	}
+	if !utf8.Valid(line) {
+		out, _ = verbatim(line)
+		return nil, out, true
+	}
+	if utf8.RuneCount(line) > maxLineChars {
+		return nil, nil, false
+	}
+	rec, ok := object(body)
+	if !ok {
+		var any interface{}
+		if json.Unmarshal(body, &any) == nil {
+			return nil, nil, false // valid JSON, not an object: skipped
+		}
+		out, _ = verbatim(line) // Go rejects it, Python might not (NaN...)
+		return nil, out, true
+	}
+	return rec, nil, true
 }
 
 // ---- profile "turns": sessions.parse_session_turns -------------------------
@@ -143,27 +177,13 @@ var (
 )
 
 func projectTurns(line []byte) ([]byte, bool) {
-	body := bytes.TrimRight(line, "\n")
-	if len(bytes.TrimSpace(body)) == 0 {
-		return nil, false // json.loads fails on blank lines
-	}
 	// type == "assistant" must be spelled out, possibly with \u escapes.
-	if !bytes.Contains(body, tagAssistant) && !bytes.Contains(body, tagEscape) {
+	if !bytes.Contains(line, tagAssistant) && !bytes.Contains(line, tagEscape) {
 		return nil, false
 	}
-	if !utf8.Valid(line) {
-		return verbatim(line)
-	}
-	if utf8.RuneCount(line) > maxLineChars {
-		return nil, false
-	}
-	rec, ok := object(body)
-	if !ok {
-		var any interface{}
-		if json.Unmarshal(body, &any) == nil {
-			return nil, false // valid JSON, not an object: skipped by Python
-		}
-		return verbatim(line) // Go rejects it, Python might not (NaN...)
+	rec, out, keep := parseBinaryLine(line)
+	if rec == nil {
+		return out, keep
 	}
 	if t, ok := str(rec["type"]); !ok || t != "assistant" {
 		return nil, false
@@ -175,18 +195,14 @@ func projectTurns(line []byte) ([]byte, bool) {
 	if usage, ok := object(msg["usage"]); !ok || len(usage) == 0 {
 		return nil, false // not a dict, or empty (falsy)
 	}
-	out := pick(rec, "type", "timestamp", "requestId")
+	o := pick(rec, "type", "timestamp", "requestId")
 	slim := pick(msg, "id", "model", "usage")
 	if c, ok := msg["content"]; ok {
 		if items, ok := toolUseItems(c, "type", "name"); ok {
-			slim["content"] = items
+			slim = append(slim, kv{"content", items})
 		} // non-list content is ignored by Python: omitting it is equivalent
 	}
-	out["message"] = marshal(slim)
-	if b := marshal(out); b != nil {
-		return b, true
-	}
-	return verbatim(line)
+	return append(o, kv{"message", slim.encode()}).encode(), true
 }
 
 // ---- profile "product": transcript_product.scan ----------------------------
@@ -219,19 +235,19 @@ func projectProduct(line []byte) ([]byte, bool) {
 		}
 		return verbatim(line) // parse error: Python marks the scan incomplete
 	}
-	out := pick(rec, "type", "timestamp", "attachment")
+	o := pick(rec, "type", "timestamp", "attachment")
 	if msg, ok := object(rec["message"]); ok {
-		slim := map[string]raw{}
+		var slim obj
 		if c, ok := msg["content"]; ok {
 			if items, ok := toolUseItems(c, "type", "name", "id"); ok {
-				slim["content"] = items
+				slim = append(slim, kv{"content", items})
 			}
 		}
-		out["message"] = marshal(slim)
+		o = append(o, kv{"message", slim.encode()})
 	}
 	// A non-dict message (or none) yields no content in Python either.
-	b := marshal(out)
-	if b == nil || !hasProductTag(b) {
+	b := o.encode()
+	if !hasProductTag(b) {
 		return verbatim(line) // keep it visible to Python's tag filter
 	}
 	return b, true
@@ -255,7 +271,7 @@ func projectNudge(line []byte) ([]byte, bool) {
 		}
 		return verbatim(line)
 	}
-	out := pick(rec, "type", "subtype", "timestamp", "uuid", "isSidechain")
+	o := pick(rec, "type", "subtype", "timestamp", "uuid", "isSidechain")
 	if msg, ok := object(rec["message"]); ok {
 		slim := pick(msg, "id", "model", "usage")
 		if c, ok := msg["content"]; ok {
@@ -264,18 +280,15 @@ func projectNudge(line []byte) ([]byte, bool) {
 			// other strings with "" (still a str, never "/clear").
 			if s, ok := str(c); ok {
 				if strings.Contains(s, "/clear") {
-					slim["content"] = c
+					slim = append(slim, kv{"content", c})
 				} else {
-					slim["content"] = raw(`""`)
+					slim = append(slim, kv{"content", raw(`""`)})
 				}
 			}
 		}
-		out["message"] = marshal(slim)
+		o = append(o, kv{"message", slim.encode()})
 	}
-	if b := marshal(out); b != nil {
-		return b, true
-	}
-	return verbatim(line)
+	return o.encode(), true
 }
 
 // ---- profile "session": sessions._parse_session_jsonl ----------------------
@@ -287,99 +300,80 @@ func projectNudge(line []byte) ([]byte, bool) {
 var sessionBaseKeys = []string{"type", "timestamp", "version", "slug", "isSidechain"}
 
 func projectSession(line []byte) ([]byte, bool) {
-	body := bytes.TrimRight(line, "\n")
-	if len(bytes.TrimSpace(body)) == 0 {
-		return nil, false
-	}
-	if !utf8.Valid(line) {
-		return verbatim(line)
-	}
-	if utf8.RuneCount(line) > maxLineChars {
-		return nil, false
-	}
-	rec, ok := object(body)
-	if !ok {
-		var any interface{}
-		if json.Unmarshal(body, &any) == nil {
-			return nil, false
-		}
-		return verbatim(line)
+	rec, out, keep := parseBinaryLine(line)
+	if rec == nil {
+		return out, keep
 	}
 	typ, _ := str(rec["type"])
-	var out map[string]raw
+	var o obj
 	switch typ {
 	case "user":
-		out = pick(rec, append(sessionBaseKeys, "isMeta", "isCompactSummary")...)
-		if m, present := rec["message"]; present {
-			msg, isObj := object(m)
-			if !isObj {
-				out["message"] = m // a non-dict message is read as the content itself
-				break
-			}
-			slim := map[string]raw{}
-			if c, ok := msg["content"]; ok {
-				var blocks []raw
-				if json.Unmarshal(c, &blocks) == nil {
-					kept := make([]raw, 0, len(blocks))
-					for _, b := range blocks {
-						block, ok := object(b)
-						if !ok {
-							kept = append(kept, b) // strings and scalars as they are
-							continue
-						}
-						if t, ok := str(block["type"]); ok && t == "text" {
-							kept = append(kept, b)
-						} else {
-							kept = append(kept, marshal(pick(block, "type")))
-						}
-					}
-					enc, _ := json.Marshal(kept)
-					slim["content"] = enc
-				} else {
-					slim["content"] = c // strings (prompts) verbatim
-				}
-			}
-			out["message"] = marshal(slim)
+		o = pick(rec, append(append([]string(nil), sessionBaseKeys...), "isMeta", "isCompactSummary")...)
+		m, present := rec["message"]
+		if !present {
+			break
 		}
+		msg, isObj := object(m)
+		if !isObj {
+			o = append(o, kv{"message", m}) // a non-dict message is read as the content itself
+			break
+		}
+		var slim obj
+		if c, ok := msg["content"]; ok {
+			var blocks []raw
+			if json.Unmarshal(c, &blocks) == nil {
+				kept := make([][]byte, 0, len(blocks))
+				for _, b := range blocks {
+					block, ok := object(b)
+					if !ok {
+						kept = append(kept, b) // strings and scalars as they are
+						continue
+					}
+					if t, ok := str(block["type"]); ok && t == "text" {
+						kept = append(kept, b)
+					} else {
+						kept = append(kept, pick(block, "type").encode())
+					}
+				}
+				slim = append(slim, kv{"content", encodeArr(kept)})
+			} else {
+				slim = append(slim, kv{"content", c}) // strings (prompts) verbatim
+			}
+		}
+		o = append(o, kv{"message", slim.encode()})
 	case "assistant":
-		out = pick(rec, append(sessionBaseKeys, "requestId")...)
-		if m, present := rec["message"]; present {
-			msg, isObj := object(m)
-			if !isObj {
-				break // non-dict assistant messages are replaced by {}
-			}
-			slim := pick(msg, "id", "model", "usage")
-			if c, ok := msg["content"]; ok {
-				var blocks []raw
-				if json.Unmarshal(c, &blocks) == nil {
-					kept := []raw{}
-					for _, b := range blocks {
-						block, ok := object(b)
-						if !ok {
-							continue
-						}
-						if t, ok := str(block["type"]); !ok || t != "tool_use" {
-							continue
-						}
-						s := pick(block, "type", "name")
-						if in, ok := object(block["input"]); ok {
-							s["input"] = marshal(pick(in, "skill", "subagent_type"))
-						}
-						kept = append(kept, marshal(s))
-					}
-					enc, _ := json.Marshal(kept)
-					slim["content"] = enc
-				}
-			}
-			out["message"] = marshal(slim)
+		o = pick(rec, append(append([]string(nil), sessionBaseKeys...), "requestId")...)
+		msg, isObj := object(rec["message"])
+		if !isObj {
+			break // non-dict assistant messages are read as {}
 		}
+		slim := pick(msg, "id", "model", "usage")
+		if c, ok := msg["content"]; ok {
+			var blocks []raw
+			if json.Unmarshal(c, &blocks) == nil {
+				kept := [][]byte{}
+				for _, b := range blocks {
+					block, ok := object(b)
+					if !ok {
+						continue
+					}
+					if t, ok := str(block["type"]); !ok || t != "tool_use" {
+						continue
+					}
+					s := pick(block, "type", "name")
+					if in, ok := object(block["input"]); ok {
+						s = append(s, kv{"input", pick(in, "skill", "subagent_type").encode()})
+					}
+					kept = append(kept, s.encode())
+				}
+				slim = append(slim, kv{"content", encodeArr(kept)})
+			}
+		}
+		o = append(o, kv{"message", slim.encode()})
 	default:
-		out = pick(rec, sessionBaseKeys...)
+		o = pick(rec, sessionBaseKeys...)
 	}
-	if b := marshal(out); b != nil {
-		return b, true
-	}
-	return verbatim(line)
+	return o.encode(), true
 }
 
 // ---- driver -----------------------------------------------------------------
@@ -452,6 +446,9 @@ func buildOne(p profile, src, dir string) (string, error) {
 		return "changed", nil
 	}
 	if err := os.Rename(tmpName, dst); err != nil {
+		if _, serr := os.Stat(dst); serr == nil {
+			return "fresh", nil // a concurrent run published the same projection
+		}
 		return "", err
 	}
 	published = true
@@ -468,15 +465,22 @@ func buildOne(p profile, src, dir string) (string, error) {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "procs" {
-		os.Exit(runProcs(os.Args[2:]))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "procs":
+			os.Exit(runProcs(os.Args[2:]))
+		case "compute":
+			os.Exit(runCompute(os.Args[2:]))
+		}
 	}
 	cacheDir := flag.String("cache", "", "cache root directory (required)")
 	jobs := flag.Int("j", runtime.NumCPU(), "parallel workers")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: toidx -cache DIR [-j N] < jobs.txt   (one \"<profile>\\t<absolute path>\" per line)")
+		fmt.Fprintln(os.Stderr, "       toidx compute -cache DIR -ctx CTX.json < jobs")
+		fmt.Fprintln(os.Stderr, "       toidx procs get-process PREFIX | cim PREFIX | names")
 		fmt.Fprintln(os.Stderr, "       toidx version")
-		fmt.Fprintln(os.Stderr, "profiles: turns, product, nudge")
+		fmt.Fprintln(os.Stderr, "profiles: turns, product, nudge, session")
 	}
 	flag.Parse()
 	if flag.NArg() == 1 && flag.Arg(0) == "version" {
@@ -540,3 +544,5 @@ func main() {
 	wg.Wait()
 	out.Flush()
 }
+
+var _ = hasKey
