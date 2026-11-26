@@ -12,6 +12,7 @@ Profiles (see native/toidx/main.go):
   turns    sessions.parse_session_turns       (binary _raw_lines reader)
   product  transcript_product.scan            (text-mode reader)
   nudge    nudge_followthrough._rows          (text-mode reader)
+  session  sessions._parse_session_jsonl      (binary _raw_lines reader)
 
 Everything is fail-open: without the binary, with a stale projection or on
 any error, readers use the raw transcript exactly as upstream does. Set
@@ -25,7 +26,7 @@ import sys
 from pathlib import Path
 
 FORMAT_VERSION = 1
-PROFILES = ("turns", "product", "nudge")
+PROFILES = ("turns", "product", "nudge", "session")
 _DISABLE_ENV = "TOKEN_OPTIMIZER_NATIVE_INDEX"
 _BINARY_ENV = "TOKEN_OPTIMIZER_TOIDX"
 _ATTEMPTED = set()  # (profile, key, size, mtime_ns) already sent to the binary
@@ -64,7 +65,7 @@ def _eligible(profile, key):
         st = os.stat(key)
     except OSError:
         return None
-    if profile == "turns":
+    if profile in ("turns", "session"):
         # Larger transcripts go through upstream's own SQLite index instead.
         from . import transcript_stream
         if st.st_size > transcript_stream.LARGE_BYTES:
@@ -91,6 +92,38 @@ def source(path, profile):
     """The file a reader should open: the projection when fresh, else ``path``."""
     found = resolve(path, profile)
     return found if found is not None else Path(path)
+
+
+def raw_lines(path, profile):
+    """Binary-reader profiles: open the projection, else upstream's reader."""
+    from . import transcript_stream
+    found = resolve(path, profile)
+    if found is not None:
+        try:
+            return transcript_stream._raw_lines(open(found, "rb"))
+        except OSError:
+            pass
+    return transcript_stream.open_transcript(path)
+
+
+def warm_window(facade, days=30):
+    """Project every transcript a dashboard regen reads, in one native call.
+
+    Main transcripts of the window plus their subagent files, for the binary
+    reader profiles. Called once at the start of a regen so the many later
+    per-file parses all find a fresh projection.
+    """
+    try:
+        if not enabled():
+            return None
+        files = [Path(fp) for fp, _m, _p in facade._find_all_jsonl_files(days)]
+        files += [f for p in list(files) for f in (p.parent / p.stem / "subagents").glob("*.jsonl")]
+        todo = 0
+        for profile in ("session", "turns"):
+            todo += warm(files, profile) or 0
+        return todo
+    except Exception:
+        return None
 
 
 def warm(paths, profile, timeout=None):

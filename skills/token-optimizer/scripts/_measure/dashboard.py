@@ -2307,6 +2307,12 @@ def generate_standalone_dashboard(days=None, quiet=None, force=None):
             print(f"Error: dashboard template not found at: {template_path}")
         return None
 
+    try:  # fork: project every stale transcript once, natively, before the readers run
+        from . import native_index
+        native_index.warm_window(_measure_facade, max(days or 0, 30))
+    except Exception:
+        pass
+
     if not quiet:
         print("  Measuring current token overhead...")
     components = _measure_facade.measure_components()

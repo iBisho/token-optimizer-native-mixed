@@ -616,7 +616,8 @@ def _parse_session_jsonl(filepath, window_start=None, window_end=None):
     first_user_record_seen = False
 
     try:
-        with transcript_stream.open_transcript(filepath) as f:
+        # Fork: the native "session" projection when fresh (see native_index.py).
+        with native_index.raw_lines(filepath, "session") as f:
             for line in f:
                 if len(line) > _measure_facade.codex_session.MAX_JSONL_LINE_CHARS:
                     continue  # bounded per-line work, same limit as the Codex adapter

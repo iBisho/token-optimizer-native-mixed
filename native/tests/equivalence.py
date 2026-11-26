@@ -9,7 +9,7 @@ projection cache (and nothing when TOKEN_OPTIMIZER_NATIVE_INDEX=0).
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -66,6 +66,31 @@ def main():
             bad.append(str(f))
     failures += len(bad)
     print(f"  turns: {len(files) - len(bad)}/{len(files)} identical", *bad[:5], sep="\n    ")
+
+    # --- session (_parse_session_jsonl), whole file and a 7-day window slice
+    native_index.warm(files + subagents, "session")
+    win_end = datetime.now(timezone.utc)
+    win_start = win_end - timedelta(days=7)
+
+    def parse(f, window):
+        facade._parse_session_jsonl_cache.clear()  # in-process memo, keyed without mode
+        return (facade._parse_session_jsonl(str(f), win_start, win_end) if window
+                else facade._parse_session_jsonl(str(f)))
+
+    sbad = []
+    t_raw = t_fast = 0.0
+    for f in files + subagents:
+        for _attempt in range(3):
+            native_index.warm([f], "session")
+            mode(False); s = time.perf_counter(); a = (parse(f, False), parse(f, True)); t_raw += time.perf_counter() - s
+            mode(True); s = time.perf_counter(); b = (parse(f, False), parse(f, True)); t_fast += time.perf_counter() - s
+            if a == b:
+                break
+        else:
+            sbad.append(str(f))
+    failures += len(sbad)
+    print(f"  session raw {t_raw:.2f}s, native {t_fast:.2f}s (incl. retries)")
+    print(f"  session: {len(files) + len(subagents) - len(sbad)}/{len(files) + len(subagents)} identical", *sbad[:5], sep="\n    ")
 
     # --- product
     now = datetime.now(timezone.utc)

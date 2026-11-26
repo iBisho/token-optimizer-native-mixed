@@ -57,6 +57,7 @@ var profiles = map[string]profile{
 	"turns":   {"turns", true, projectTurns},
 	"product": {"product", false, projectProduct},
 	"nudge":   {"nudge", false, projectNudge},
+	"session": {"session", true, projectSession},
 }
 
 // CacheName must match native_index.py:_cache_name.
@@ -270,6 +271,110 @@ func projectNudge(line []byte) ([]byte, bool) {
 			}
 		}
 		out["message"] = marshal(slim)
+	}
+	if b := marshal(out); b != nil {
+		return b, true
+	}
+	return verbatim(line)
+}
+
+// ---- profile "session": sessions._parse_session_jsonl ----------------------
+//
+// Every dict record counts (timestamps, version, slug, per-day metrics), so
+// none is dropped; each is reduced to the fields the parser and its helpers
+// (_osrc_prompt_text, _task_user_text, _leading_user_text) read.
+
+var sessionBaseKeys = []string{"type", "timestamp", "version", "slug", "isSidechain"}
+
+func projectSession(line []byte) ([]byte, bool) {
+	body := bytes.TrimRight(line, "\n")
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil, false
+	}
+	if !utf8.Valid(line) {
+		return verbatim(line)
+	}
+	if utf8.RuneCount(line) > maxLineChars {
+		return nil, false
+	}
+	rec, ok := object(body)
+	if !ok {
+		var any interface{}
+		if json.Unmarshal(body, &any) == nil {
+			return nil, false
+		}
+		return verbatim(line)
+	}
+	typ, _ := str(rec["type"])
+	var out map[string]raw
+	switch typ {
+	case "user":
+		out = pick(rec, append(sessionBaseKeys, "isMeta", "isCompactSummary")...)
+		if m, present := rec["message"]; present {
+			msg, isObj := object(m)
+			if !isObj {
+				out["message"] = m // a non-dict message is read as the content itself
+				break
+			}
+			slim := map[string]raw{}
+			if c, ok := msg["content"]; ok {
+				var blocks []raw
+				if json.Unmarshal(c, &blocks) == nil {
+					kept := make([]raw, 0, len(blocks))
+					for _, b := range blocks {
+						block, ok := object(b)
+						if !ok {
+							kept = append(kept, b) // strings and scalars as they are
+							continue
+						}
+						if t, ok := str(block["type"]); ok && t == "text" {
+							kept = append(kept, b)
+						} else {
+							kept = append(kept, marshal(pick(block, "type")))
+						}
+					}
+					enc, _ := json.Marshal(kept)
+					slim["content"] = enc
+				} else {
+					slim["content"] = c // strings (prompts) verbatim
+				}
+			}
+			out["message"] = marshal(slim)
+		}
+	case "assistant":
+		out = pick(rec, append(sessionBaseKeys, "requestId")...)
+		if m, present := rec["message"]; present {
+			msg, isObj := object(m)
+			if !isObj {
+				break // non-dict assistant messages are replaced by {}
+			}
+			slim := pick(msg, "id", "model", "usage")
+			if c, ok := msg["content"]; ok {
+				var blocks []raw
+				if json.Unmarshal(c, &blocks) == nil {
+					kept := []raw{}
+					for _, b := range blocks {
+						block, ok := object(b)
+						if !ok {
+							continue
+						}
+						if t, ok := str(block["type"]); !ok || t != "tool_use" {
+							continue
+						}
+						s := pick(block, "type", "name")
+						if in, ok := object(block["input"]); ok {
+							s["input"] = marshal(pick(in, "skill", "subagent_type"))
+						}
+						kept = append(kept, marshal(s))
+					}
+					enc, _ := json.Marshal(kept)
+					slim["content"] = enc
+				}
+			}
+			out["message"] = marshal(slim)
+		}
+	default:
+		out = pick(rec, sessionBaseKeys...)
 	}
 	if b := marshal(out); b != nil {
 		return b, true
