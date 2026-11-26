@@ -108,6 +108,13 @@ def _canonical_measure_fixture(request):
 # which strips it and sets explicit waits.
 os.environ.setdefault("TOKEN_OPTIMIZER_COLD_COMPILE_WAIT_S", "600")
 
+# This suite pins upstream's Python behaviour (many tests stub subprocess.run
+# and expect the PowerShell/Python paths). The native toidx paths are checked
+# against those Python paths by native/tests/*_equivalence.py instead, so keep
+# them off here, and never download the release binary from a test.
+os.environ.setdefault("TOKEN_OPTIMIZER_NATIVE_INDEX", "0")
+os.environ.setdefault("TOKEN_OPTIMIZER_NATIVE_DOWNLOAD", "0")
+
 _ENV_DISABLE = "TOKEN_OPTIMIZER_TREE_GUARD"
 _ENV_PER_TEST = "TOKEN_OPTIMIZER_TREE_GUARD_PER_TEST"
 
