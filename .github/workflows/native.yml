@@ -44,10 +44,28 @@ jobs:
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - name: vet
         run: go vet ./...
+      - name: unit tests
+        run: go test ./...
       - name: build
-        run: go build -trimpath -ldflags="-s -w" -o "dist/${{ matrix.out }}" .
+        # Windows: GUI subsystem, so the hook front door never opens a console
+        # window (pipes still work, as for pythonw.exe).
+        run: go build -trimpath -ldflags="-s -w ${{ runner.os == 'Windows' && '-H windowsgui' || '' }}" -o "dist/${{ matrix.out }}" .
       - name: smoke
         run: test "$(./dist/${{ matrix.out }} version)" -ge 2
+      - uses: actions/setup-python@v7
+        if: runner.os == 'Windows'
+        with:
+          python-version: '3.12'
+      - name: source digest matches native_index.source_digest
+        if: runner.os == 'Windows'
+        run: |
+          go_digest=$(./dist/toidx.exe source-digest .)
+          py_digest=$(cd ../.. && python -c "import sys; sys.path.insert(0, 'skills/token-optimizer/scripts'); from _measure.native_index import source_digest; print(source_digest('.'))")
+          echo "go=$go_digest py=$py_digest"
+          test "$go_digest" = "$py_digest"
+      - name: hook front door matches run.py
+        if: runner.os == 'Windows'
+        run: cd ../.. && python native/tests/hook_equivalence.py native/toidx/dist/toidx.exe
       - uses: actions/upload-artifact@v5
         with:
           name: toidx-${{ runner.os }}

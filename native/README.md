@@ -116,6 +116,41 @@ Toolhelp32, `QueryFullProcessImageName`, `NtQueryInformationProcess` and
 `GetProcessTimes`. 0.15 s instead of 2-20 s. Paths may differ in letter case
 from WMI; the callers only `stat` them, which is case-insensitive on Windows.
 
+### 5. Hook front door (`toidx hook`, Windows)
+
+Every hook event used to start a bash launcher that probes for a Python
+(on Windows a `pythonw -c ""` liveness probe on every call, plus a
+`TOKEN_OPTIMIZER_PYTHON` probe when set), then `run.py` in one Python, which
+starts the handler in a second Python. About 0.7 s before any hook work.
+
+Now `hooks/python-launcher.sh` first runs `native/bin/toidx.exe hook <run.py>
+<target> [args]` when that file exists:
+
+- The interpreter is the one `run.py` recorded for its own `sys.executable`
+  the last time the launcher ran it (`~/.cache/token-optimizer/native-hook/`,
+  keyed by `PATH` and `TOKEN_OPTIMIZER_PYTHON`). No record, or a record that
+  no longer fits: toidx exits 75 before reading stdin and the launcher
+  carries on exactly as before.
+- `hook.go` ports `run.py`'s decisions: host disable switch in
+  `settings.json`, consent (with the plugin-data identity check), target path
+  rules, the prompt-hook opt-out, a stale `CLAUDE_PLUGIN_ROOT`, the bytecode
+  prefix, the child environment and the Claude runtime export. It then starts
+  `module_runner.py` directly, detached from any console, with the same
+  120 s ceiling: one Python per event instead of two.
+- Anything it cannot decide exactly like `run.py` (another runtime, an
+  unusual `CLAUDE_CONFIG_DIR`, a config `json` would parse differently, the
+  consent backfill that rewrites `config.json`) runs `python run.py` instead.
+- `toidx.exe` is built for the Windows GUI subsystem (`-H windowsgui`), like
+  `pythonw.exe`, so it never opens a console window.
+- The release binary reaches `native/bin/` as a copy made by `native_index`
+  with a `toidx.exe.digest` marker; toidx and `native_index` ignore the copy
+  once the plugin's Go sources differ from the ones it was built from.
+
+`native/tests/hook_equivalence.py` (run by CI on Windows) runs the same
+scenarios through `run.py` and `toidx hook` and compares what the handler
+received. POSIX keeps the launcher: there `run.py`'s runtime detection scans
+the process tree for OpenCode, which is not ported.
+
 ### Fallbacks and switches
 
 Everything is fail-open: no binary, a stale projection, a file that changed
@@ -126,6 +161,7 @@ unchanged.
 - `TOKEN_OPTIMIZER_NATIVE_COMPUTE=0` disables only the native parsers.
 - `TOKEN_OPTIMIZER_TOIDX=<path>` points at a binary elsewhere.
 - `TOKEN_OPTIMIZER_NATIVE_DOWNLOAD=0` never downloads the release binary.
+- `TOKEN_OPTIMIZER_NATIVE_HOOK=0` keeps the hook launcher on its own path.
 
 ## Distribution
 
@@ -159,8 +195,10 @@ Requires Go 1.24+ (see `go.mod`); `go build` fetches fastjson, pinned in
 `go.sum`. From the repo root:
 
 ```powershell
-cd native/toidx; go build -trimpath -ldflags="-s -w" -o ../bin/toidx.exe .
+cd native/toidx; go build -trimpath -ldflags="-s -w -H windowsgui" -o ../bin/toidx.exe .
 ```
+
+`go test ./...` runs the hook front door's unit tests.
 
 On macOS/Linux build `../bin/toidx`. A local build always wins over the
 release binary.
@@ -194,6 +232,8 @@ Native layer:
 - `_measure/native_index.py` (new): projection cache client, binary lookup
   and download trigger.
 - `scripts/toidx_fetch.py` (new): hash-checked release download.
+- `hooks/python-launcher.sh`: tries `toidx hook` first (Windows).
+- `hooks/run.py`: records its interpreter for `toidx hook` (Windows).
 - `PRIVACY.md`: the one network request (the binary download).
 - `_measure/native_compute.py` (new): native parser client (context, jobs, results).
 - `_measure/sessions.py`: both parsers return prepared native results; their

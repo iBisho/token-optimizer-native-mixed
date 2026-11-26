@@ -102,6 +102,7 @@ def _downloaded():
     except Exception:
         return None
     if _executable(dest):
+        _install_hook_copy(dest, pinned_source=source_digest())
         return dest
     if os.environ.get(_DOWNLOAD_ENV, "1") == "0" or dest in _FETCH_STARTED:
         return None
@@ -124,6 +125,49 @@ def _downloaded():
 _RELEASE_REPO = "iBisho/token-optimizer-native-mixed"
 
 
+def _local_binary():
+    return _repo_root() / "native" / "bin" / ("toidx.exe" if sys.platform == "win32" else "toidx")
+
+
+def _install_hook_copy(dest, pinned_source):
+    """Windows: copy the verified release binary to native/bin/toidx.exe, where
+    hooks/python-launcher.sh looks for the hook front door, with a
+    "<exe>.digest" marker naming the sources it was built from (both toidx
+    and _usable_local() refuse a copy whose sources have changed since)."""
+    if sys.platform != "win32":
+        return
+    target = _local_binary()
+    marker = Path(str(target) + ".digest")
+    try:
+        if target.is_file() and marker.is_file() and marker.read_text(encoding="utf-8").strip() == pinned_source:
+            return
+        if target.is_file() and not marker.is_file():
+            return  # a local build: never replace it
+        import shutil
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(f"toidx.{os.getpid()}.tmp")
+        shutil.copyfile(dest, tmp)
+        os.replace(tmp, target)
+        marker.write_text(pinned_source + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _usable_local():
+    """A local build (no marker), or a release copy whose marker still names
+    the installed Go sources."""
+    local = _local_binary()
+    if not _executable(local):
+        return None
+    marker = Path(str(local) + ".digest")
+    if not marker.exists():
+        return local
+    try:
+        return local if marker.read_text(encoding="utf-8").strip() == source_digest() else None
+    except OSError:
+        return None
+
+
 def binary():
     """The toidx binary to run, or None (the Python paths are used).
 
@@ -137,8 +181,7 @@ def binary():
     found = _FOUND.get("binary")
     if found is not None:
         return found
-    local = _repo_root() / "native" / "bin" / ("toidx.exe" if sys.platform == "win32" else "toidx")
-    found = local if _executable(local) else _downloaded()
+    found = _usable_local() or _downloaded()
     if found is not None:
         _FOUND["binary"] = found
     return found

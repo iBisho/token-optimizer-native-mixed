@@ -545,9 +545,45 @@ def _cowork_copy_should_stand_down() -> bool:
         return False
 
 
+def _record_native_hook_interpreter() -> None:
+    """Fork: remember this interpreter for toidx's hook front door.
+
+    The launcher chose and validated sys.executable; native/toidx/hook.go
+    reuses it (keyed by PATH and TOKEN_OPTIMIZER_PYTHON) so later hooks skip
+    the launcher's discovery and probes. Windows only, like the front door.
+    Never raises.
+    """
+    if os.name != "nt":
+        return
+    if (os.environ.get("TOKEN_OPTIMIZER_NATIVE_HOOK", "1") == "0"
+            or os.environ.get("TOKEN_OPTIMIZER_NATIVE_INDEX", "1") == "0"):
+        return
+    try:
+        exe = sys.executable
+        if not exe or not os.path.isabs(exe):
+            return
+        import hashlib
+        key = hashlib.sha256(("v1\0" + os.environ.get("PATH", "") + "\0"
+                              + os.environ.get("TOKEN_OPTIMIZER_PYTHON", "")).encode("utf-8")).hexdigest()[:24]
+        path = Path.home() / ".cache" / "token-optimizer" / "native-hook" / f"python-{key}.txt"
+        content = ("v1\n" + exe + "\n").encode("utf-8")
+        try:
+            if path.read_bytes() == content:
+                return
+        except OSError:
+            pass
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_bytes(content)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         return 0
+    _record_native_hook_interpreter()
     # Bytecode location first, before this process imports anything from the
     # plugin's scripts dir (the consent check and runtime detection below do).
     _pycache_prefix = None

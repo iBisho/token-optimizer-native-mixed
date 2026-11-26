@@ -66,8 +66,10 @@ jobs:
           go vet ./...
           mkdir -p dist
           for t in windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
-            os=${t%/*}; arch=${t#*/}; ext=""; [ "$os" = windows ] && ext=".exe"
-            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "dist/toidx-$os-$arch$ext" .
+            os=${t%/*}; arch=${t#*/}; ext=""; gui=""
+            # Windows: GUI subsystem, so the hook front door never opens a console window.
+            [ "$os" = windows ] && ext=".exe" && gui="-H windowsgui"
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w $gui" -o "dist/toidx-$os-$arch$ext" .
           done
           test "$(GOOS= GOARCH= go run . version)" -ge 1
 

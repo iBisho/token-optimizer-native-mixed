@@ -620,6 +620,28 @@ _exec_discovered_interpreter() {
     _try_exec "$interp" "$@"
 }
 
+# Native front door (fork; native/README.md, "Hook front door"). On Windows,
+# when the plugin ships its toidx binary, `toidx hook` does run.py's checks and
+# starts the hook's single Python with the interpreter run.py recorded on an
+# earlier run, skipping the discovery and probes below. It exits 75, before
+# reading stdin, when it has no usable record; this script then carries on.
+# Checks are builtins only (no subshell): this runs on every hook event.
+if [ "$#" -ge 1 ] && [ "${1##*/}" = "run.py" ] \
+   && [ "${TOKEN_OPTIMIZER_NATIVE_HOOK:-1}" != 0 ] && [ "${TOKEN_OPTIMIZER_NATIVE_INDEX:-1}" != 0 ]; then
+    _to_native="${1%/*}/../native/bin/toidx.exe"
+    case "${OSTYPE:-}" in
+        msys*|cygwin*)
+            if [ -f "$_to_native" ] && [ -x "$_to_native" ]; then
+                _to_rc=0
+                "$_to_native" hook "$@" || _to_rc=$?
+                if [ "$_to_rc" -ne 75 ]; then
+                    exit "$_to_rc"
+                fi
+            fi
+            ;;
+    esac
+fi
+
 # Explicit user override. pyenv / asdf / conda / venv interpreters, and Codex
 # Desktop's bundled runtime, live outside the PATH-hijack safe-prefix allow-list
 # and are otherwise rejected. Naming one in TOKEN_OPTIMIZER_PYTHON is an explicit

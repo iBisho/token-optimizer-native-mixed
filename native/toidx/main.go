@@ -471,6 +471,16 @@ func main() {
 			os.Exit(runProcs(os.Args[2:]))
 		case "compute":
 			os.Exit(runCompute(os.Args[2:]))
+		case "hook":
+			os.Exit(runHook(os.Args[2:]))
+		case "source-digest": // toidx source-digest <native/toidx dir>
+			if len(os.Args) == 3 {
+				if d, ok := sourceDigest(os.Args[2]); ok {
+					fmt.Println(d)
+					os.Exit(0)
+				}
+			}
+			os.Exit(1)
 		}
 	}
 	cacheDir := flag.String("cache", "", "cache root directory (required)")
