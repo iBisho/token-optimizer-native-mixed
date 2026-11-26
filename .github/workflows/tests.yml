@@ -54,6 +54,10 @@ jobs:
       - name: Run tests
         env:
           TO_TEST_SHARD: ${{ matrix.shard }}/4
+          # Hosted Windows runners start processes slowly and unevenly; the hook
+          # latency test (tests/test_hook_latency_budget.py) fails there now and
+          # then upstream too (e.g. edit p50 0.367 s vs 0.350 s). Give it 3x.
+          TOKEN_OPTIMIZER_LATENCY_SLACK: ${{ runner.os == 'Windows' && '3.0' || '2.0' }}
         run: python -m pytest tests/ -q -rs --ignore-glob='tests/test_measure_split_lane*.py'
 
   # Runtime proof of the hook non-blocking invariant on a machine with no
