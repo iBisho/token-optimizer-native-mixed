@@ -37,10 +37,9 @@ LAUNCHER = REPO / "hooks" / "python-launcher.sh"
 RUN_PY = REPO / "hooks" / "run.py"
 SCRIPTS = REPO / "skills" / "token-optimizer" / "scripts"
 
-# EVERY launcher copy in the repo — the canonical hooks/ AND the generated Codex
-# marketplace mirror plugins/token-optimizer/hooks/. A user's Codex froze because
-# ONE copy exited 127; a mirror that can drift is itself the bug, so the
-# non-blocking invariant is asserted on all copies.
+# EVERY launcher copy in the repo (the canonical hooks/ one; this edition ships
+# no mirrors). A user's Codex froze because ONE copy exited 127, so the
+# non-blocking invariant is asserted on any copy the scan finds.
 #
 # scratchpad/ is excluded: it holds throwaway repro fixtures (fake home dirs,
 # third-party plugin copies) that are NOT shipped Token Optimizer code. Scanning
@@ -106,11 +105,11 @@ def test_launcher_has_no_nonzero_terminal_exit_anywhere(launcher):
     assert not bad, f"{launcher.name} has blocking exit codes {bad}; hooks must exit 0"
 
 
-def test_at_least_three_launcher_copies_covered():
-    # Guard the guard: canonical hooks/ + Codex mirror + Cowork mirror. If a mirror
-    # path changes, this test must still find them all so a drifting copy can never
-    # silently escape the invariant above.
-    assert len(ALL_LAUNCHERS) >= 3, f"expected canonical + 2 mirrors, found {ALL_LAUNCHERS}"
+def test_canonical_launcher_is_covered():
+    # Guard the guard: the scan must find the canonical hooks/ launcher (this
+    # Claude Code-only edition ships no mirror copies), so the invariants above
+    # can never pass vacuously on an empty parameter list.
+    assert LAUNCHER in ALL_LAUNCHERS, f"canonical launcher not found, scanned {ALL_LAUNCHERS}"
 
 
 def test_all_launcher_copies_are_byte_identical():

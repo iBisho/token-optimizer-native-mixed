@@ -116,8 +116,8 @@ class Machine:
 
     def install_plugin(self, rel: str, src: str = "") -> Path:
         """Copy a plugin build (hooks + scripts, no dashboard assets) to ``rel``.
-        ``src`` "" is the Claude Code plugin (the repo root);
-        "plugins/token-optimizer" is the Codex marketplace build."""
+        ``src`` "" is the Claude Code plugin (the repo root), the only build
+        this edition ships."""
         dst = self.path(rel)
         dst.mkdir(parents=True, exist_ok=True)
         base = REPO / src if src else REPO
@@ -326,28 +326,6 @@ HOSTS = {
         other_homes=("{home}/.codex",),
         assumed=("CLAUDE_CODE_REMOTE / REMOTE_SESSION_ID / REMOTE_ENVIRONMENT_TYPE unset in Cowork "
                  "(not captured by the 2026-08-13 probe)",)),
-    # Codex running the Codex marketplace build of the plugin, on a machine
-    # that also has Claude Code. Codex loads the plugin's hooks.json itself and
-    # gives the hook ONLY CLAUDE_PLUGIN_ROOT / CLAUDE_PLUGIN_DATA: no CODEX_HOME,
-    # no TOKEN_OPTIMIZER_RUNTIME (verified live with an env-dumping hook, see
-    # tests/test_codex_sessionstart_json_contract.py). The binary of Codex
-    # 0.163.0-alpha.10.2 also names PLUGIN_ROOT / PLUGIN_DATA beside them. Paths:
-    # ~/.codex/plugins/cache/<marketplace>/token-optimizer/<version> and
-    # ~/.codex/plugins/data/token-optimizer-<marketplace> (a real Codex install).
-    "codex_plugin": Host(
-        name="codex_plugin",
-        evidence="test_codex_sessionstart_json_contract.py live env dump; Codex plugin dir layout",
-        home="home/alex",
-        plugin="home/alex/.codex/plugins/cache/alexgreensh-token-optimizer/token-optimizer/5.13.51",
-        project="home/alex/work/app",
-        env={"CLAUDE_PLUGIN_ROOT": "{plugin}", "PLUGIN_ROOT": "{plugin}",
-             "CLAUDE_PLUGIN_DATA": "{home}/.codex/plugins/data/" + PLUGIN_DATA_NAME,
-             "PLUGIN_DATA": "{home}/.codex/plugins/data/" + PLUGIN_DATA_NAME},
-        runtime="codex", host="", label="Codex",
-        state_root="home/alex/.codex",
-        plugin_src="plugins/token-optimizer", codex_rollout="home/alex/.codex/sessions/2026/10/19",
-        other_homes=("{home}/.claude", "{home}/.config/opencode", "{home}/.copilot"),
-        assumed=("PLUGIN_ROOT / PLUGIN_DATA exported (binary strings only; TO does not read them)",)),
 }
 
 
@@ -905,9 +883,8 @@ def test_every_hook_envelope_names_the_event_that_fired_it(machine, name):
                 assert hso.get("hookEventName") == event, (event, doc)
     # Positive control: both a tool hook and the prompt hook printed one.
     # Cowork's prompt hook answers this fill with a user-facing systemMessage
-    # (no event name); the Codex fixture's rollout carries no token counts, so
-    # its prompt hook has no fill to report.
-    want = {"PostToolUse"} if name in ("cowork", "codex_plugin") else {"PostToolUse", "UserPromptSubmit"}
+    # (no event name).
+    want = {"PostToolUse"} if name == "cowork" else {"PostToolUse", "UserPromptSubmit"}
     assert want <= seen, f"{name}: envelopes seen only for {sorted(seen)}"
     # Nothing a hook says tells the user to drive another harness's UI.
     if h.runtime != "claude":
@@ -1243,18 +1220,6 @@ def test_claude_session_repoints_statusline_to_a_deleted_file(machine, h):
 def test_claude_session_leaves_other_statuslines_alone(machine, command_fn, make_file):
     home, plugin, before, after = _sl_session(machine, HOSTS["cli"], command_fn, make_file)
     assert {k: after.get(k) for k in before} == before
-
-
-def test_codex_session_never_touches_claude_statusline(machine):
-    h = HOSTS["codex_plugin"]
-    env, home, project, plugin = materialize(machine, h)
-    sp, before = _seed_statusline(
-        home, f"node '{home}/.claude/plugins/cache/alexgreensh-token-optimizer/token-optimizer/5.13.40/{SL_JS}'")
-    raw = sp.read_bytes()
-    transcript = transcript_for(machine, h, project)
-    write_transcript(transcript, project)
-    run_session(machine, h, env, project, transcript)
-    assert sp.read_bytes() == raw
 
 
 def _doctor(machine, h, command_fn, make_file=None):

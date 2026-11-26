@@ -324,26 +324,6 @@ def test_dashboard_per_window_card_shows_usd():
     assert "hasUsd" in body, "per-window card does not gate the USD line on presence"
 
 
-# ----- both trees byte-identical -----
-
-def test_measure_py_trees_byte_identical():
-    a = (SCRIPTS / "measure.py").read_bytes()
-    b = (
-        ROOT / "plugins" / "token-optimizer" / "skills" / "token-optimizer"
-        / "scripts" / "measure.py"
-    ).read_bytes()
-    assert a == b, "measure.py drifted between the two install trees"
-
-
-def test_dashboard_html_trees_byte_identical():
-    a = (SCRIPTS).parent / "assets" / "dashboard.html"
-    b = (
-        ROOT / "plugins" / "token-optimizer" / "skills" / "token-optimizer"
-        / "assets" / "dashboard.html"
-    )
-    assert a.read_bytes() == b.read_bytes(), "dashboard.html drifted between the two install trees"
-
-
 def test_counted_only_weekly_dollars_are_labelled_partial():
     """Without a whole-week estimate, the card must not present the event count as the full saving."""
     html = (Path(SCRIPTS).parent / "assets" / "dashboard.html").read_text(encoding="utf-8")

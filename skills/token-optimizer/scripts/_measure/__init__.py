@@ -14,6 +14,7 @@ RUNTIME_SOURCES = ('__init__.py', '_compat.py') + tuple(name + '.py' for name in
 RUNTIME_SOURCES += ('keepwarm_safety.py', 'keepwarm_economics.py', 'keepwarm_linux.py', 'mod_action_booking.py', 'mod_action_diagnostics.py', 'mod_action_selftest.py', 'install_baseline.py', 'routing_credit.py', 'mod_compaction_booking.py', 'mod_fresh_booking.py', 'quality_continuity.py', 'quality_checkpoint.py', 'codex_quality.py', 'lease_candidate_cleanup.py', 'session_store_spool.py', 'upgrade_drain_control.py', 'compression_scan_checkpoint.py', 'status_bar_lock.py', 'session_flush_lock.py', 'context_reset_marker.py', 'holdout_fallback.py', 'dashboard_heal_claim.py', 'config_cache.py', 'setup_observation_cache.py', 'status_bar_refresh.py', 'routing_default.py', 'pilot_report.py',)
 RUNTIME_SOURCES += ('nudge_followthrough.py', 'runway_all_in.py',)
 RUNTIME_SOURCES += ('session_activity.py', 'routing_savings.py', 'pt_resume_cues.py', 'subscription_audits.py', 'limit_units.py', 'local_adapt.py', 'prefix_cost.py', 'poc_commands.py', 'counted_closes.py', 'counted_headline.py', 'apply_safe.py', 'autocompact_advice.py', 'cold_guard.py', 'keepwarm_auto.py', 'next_actions.py',)
+RUNTIME_SOURCES += ('native_index.py', 'native_compute.py',)  # native fast paths (native/README.md)
 # Set True by hooks/userpromptsubmit_runner.py right before `import measure`,
 # which consumes it. That process never patches or enumerates the facade.
 HOOK_IMPORT = False

@@ -190,7 +190,7 @@ def test_installed_smoke_exercises_normal_json_and_accounting(tmp_path):
         assert 'fixture' in settings['_disabledMcpServers']
 
 
-@pytest.mark.parametrize('origin', ['.', 'plugins/token-optimizer', 'cowork/token-optimizer'])
+@pytest.mark.parametrize('origin', ['.'])
 def test_original_manifest_shell_launcher_recovers_root_and_runs_guidance(tmp_path, origin):
     import os
     import subprocess

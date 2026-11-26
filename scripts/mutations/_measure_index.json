@@ -85,22 +85,6 @@
     "origin": "check_regression_guards.py"
   },
   {
-    "name": "cwd/project mismatch warning printed to stdout (model context, broken hook JSON)",
-    "tests": [
-      "tests/test_cloud_parity.py::test_cwd_mismatch_warning_goes_to_stderr"
-    ],
-    "edits": 1,
-    "origin": "check_regression_guards.py"
-  },
-  {
-    "name": "Claude Code cloud runs the desktop-only daemon / settings / welcome work",
-    "tests": [
-      "tests/test_cloud_parity.py"
-    ],
-    "edits": 1,
-    "origin": "check_regression_guards.py"
-  },
-  {
     "name": "Stop flush outcome never recorded",
     "tests": [
       "tests/test_codex_install_issue_276.py::test_stop_flush_records_throttled_skip"
@@ -351,8 +335,7 @@
   {
     "name": "5.13.50 schtasks /Query on every healthy SessionStart (guard before cheap gates)",
     "tests": [
-      "tests/test_hot_path_process_budget.py::test_healthy_session_start_starts_no_scheduler_query",
-      "tests/test_cloud_parity.py::test_scheduler_writers_run_cheap_gates_before_the_job_query"
+      "tests/test_hot_path_process_budget.py::test_healthy_session_start_starts_no_scheduler_query"
     ],
     "edits": 3,
     "origin": "scripts/mutations/platform.py"
@@ -573,42 +556,9 @@
     "origin": "scripts/mutations/silent.py"
   },
   {
-    "name": "ensure_dashboard_daemon queries the scheduler job before its health probe (143f9841)",
-    "tests": [
-      "tests/test_cloud_parity.py::test_scheduler_writers_run_cheap_gates_before_the_job_query"
-    ],
-    "edits": 1,
-    "origin": "scripts/mutations/today.py"
-  },
-  {
-    "name": "restart_dashboard_daemon queries the scheduler job before the already-current check (143f9841)",
-    "tests": [
-      "tests/test_cloud_parity.py::test_scheduler_writers_run_cheap_gates_before_the_job_query"
-    ],
-    "edits": 1,
-    "origin": "scripts/mutations/today.py"
-  },
-  {
-    "name": "heal_windows_task_action queries the scheduler job before its resurrection gate (143f9841)",
-    "tests": [
-      "tests/test_cloud_parity.py::test_scheduler_writers_run_cheap_gates_before_the_job_query"
-    ],
-    "edits": 1,
-    "origin": "scripts/mutations/today.py"
-  },
-  {
-    "name": "a scheduler job whose paths are all gone counts as another install (REVIEW-2 MED-2)",
-    "tests": [
-      "tests/test_cloud_parity.py::test_stale_job_whose_paths_are_gone_is_repaired_not_protected"
-    ],
-    "edits": 1,
-    "origin": "scripts/mutations/today.py"
-  },
-  {
     "name": "#278 Codex Stop writes a 'No transcript data available' placeholder",
     "tests": [
-      "tests/test_hook_wire_contract.py::test_codex_stop_finds_the_transcript_from_the_session_id_alone",
-      "tests/test_codex_shell_neutral_hooks_278.py::test_compact_capture_writes_no_unknown_placeholder_on_codex"
+      "tests/test_hook_wire_contract.py::test_codex_stop_finds_the_transcript_from_the_session_id_alone"
     ],
     "edits": 1,
     "origin": "scripts/mutations/windows_sweep_rel59.py"

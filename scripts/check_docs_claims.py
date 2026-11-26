@@ -194,14 +194,11 @@ def _source_value(relpath: str, pattern: str, what: str) -> float:
 
 _MEASURE = "skills/token-optimizer/scripts/measure.py"
 # After the split the facade delegates to _measure/*.py, so its ground truth is
-# the facade plus every provider -- and the Codex and Cowork mirror copies of the
-# same files (check-mirror-sync keeps them byte-identical). One combined source,
-# and copies disagreeing on a value fail loudly rather than passing on whichever
-# file the regex happened to hit first.
+# the facade plus every provider. One combined source, and files disagreeing on
+# a value fail loudly rather than passing on whichever file the regex happened
+# to hit first. This Claude Code-only edition ships no mirror trees.
 _MEASURE_TREES = (
     "skills/token-optimizer/scripts",
-    "plugins/token-optimizer/skills/token-optimizer/scripts",
-    "cowork/token-optimizer/skills/token-optimizer/scripts",
 )
 
 

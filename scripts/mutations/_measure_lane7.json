@@ -72,30 +72,6 @@
     "symbol": "kill_stale_sessions"
   },
   {
-    "mutation": "ensure_dashboard_daemon queries the scheduler job before its health probe (143f9841)",
-    "edit": 0,
-    "file": "skills/token-optimizer/scripts/measure.py",
-    "old": "    _measure_facade = _compat.facade()\n    if _measure_facade._daemon_snapshot_sandboxed():\n        return \"noop-sandbox\"\n    # Claude Code cloud VM: no browser to open the URL in",
-    "new": "    _measure_facade = _compat.facade()\n    if _measure_facade._scheduler_install_refused():\n        return \"noop-sandbox\"\n    # Claude Code cloud VM: no browser to open the URL in",
-    "symbol": "_ensure_dashboard_daemon"
-  },
-  {
-    "mutation": "restart_dashboard_daemon queries the scheduler job before the already-current check (143f9841)",
-    "edit": 0,
-    "file": "skills/token-optimizer/scripts/measure.py",
-    "old": "    _measure_facade = _compat.facade()\n    if _measure_facade._daemon_snapshot_sandboxed():\n        return \"noop-sandbox\"\n    try:\n        # Already current (a sibling session fixed it)?",
-    "new": "    _measure_facade = _compat.facade()\n    if _measure_facade._scheduler_install_refused():\n        return \"noop-sandbox\"\n    try:\n        # Already current (a sibling session fixed it)?",
-    "symbol": "_restart_dashboard_daemon"
-  },
-  {
-    "mutation": "heal_windows_task_action queries the scheduler job before its resurrection gate (143f9841)",
-    "edit": 0,
-    "file": "skills/token-optimizer/scripts/measure.py",
-    "old": "    _measure_facade = _compat.facade()\n    if _measure_facade._daemon_snapshot_sandboxed():\n        return False\n    try:\n        if _measure_facade.os.name != \"nt\":",
-    "new": "    _measure_facade = _compat.facade()\n    if _measure_facade._scheduler_install_refused():\n        return False\n    try:\n        if _measure_facade.os.name != \"nt\":",
-    "symbol": "_heal_windows_task_action"
-  },
-  {
     "mutation": "dashboard-launcher.cmd is read in the OEM code page and garbles non-ASCII paths",
     "edit": 0,
     "file": "skills/token-optimizer/scripts/measure.py",

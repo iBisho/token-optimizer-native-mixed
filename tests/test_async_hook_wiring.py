@@ -36,7 +36,6 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 HOOKS_JSON = REPO / "hooks" / "hooks.json"
-MIRROR_HOOKS_JSON = REPO / "plugins" / "token-optimizer" / "hooks" / "hooks.json"
 
 # (event, matcher-or-None, distinguishing substring of the command) -> expected "async" value.
 # Order within an event matters when matcher is None (Stop's three hooks share no matcher).
@@ -210,27 +209,4 @@ def test_total_async_count_is_two():
         f"expected exactly 2 async hook entries, found {count}. "
         "If you added or removed one intentionally, update this test and "
         "EXPECTED_ASYNC together."
-    )
-
-
-def test_mirror_has_async_stripped_but_is_otherwise_identical():
-    """plugins/token-optimizer/ (Codex mirror) must have async stripped -- Codex
-    skips any hook with async: true entirely -- but be identical otherwise."""
-    from _codex_mirror_norm import guard_from_resolver
-    # Since 5.13.51 the root ships the same resolver; normalize both sides.
-    root = [(e, m, guard_from_resolver(c)) for e, m, c, _ in _flatten(HOOKS_JSON)]
-    mirror = list(_flatten(MIRROR_HOOKS_JSON))
-
-    assert all(not is_async for *_, is_async in mirror), (
-        "mirror hooks.json must have every async flag stripped (Codex doesn't support async hooks)"
-    )
-    # The Codex mirror applies one further intentional transform beyond async-strip:
-    # launcher commands are rewritten to a runtime version-resolver (mid-session
-    # self-heal, since Codex pins ${CLAUDE_PLUGIN_ROOT}). Normalize that back to the
-    # root's simple guard so this test still verifies "no OTHER drift".
-    from _codex_mirror_norm import guard_from_resolver
-    mirror_no_async = [(e, m, guard_from_resolver(c)) for e, m, c, _ in mirror]
-    assert root == mirror_no_async, (
-        "mirror hooks.json content (event/matcher/command) has drifted from the root -- "
-        "run scripts/sync-codex-marketplace-plugin.sh"
     )

@@ -16,7 +16,7 @@ Guarantees under test:
   builder (single source of truth; a live-patched card can't diverge from a regen)
 - fail-open: a raising `runway_snapshot` degrades to `runway: None`, never raises
 - the payload reflects whatever reading exists now (live-reflect)
-- client wiring is present in BOTH the canonical and plugin-mirror dashboard.html
+- client wiring is present in the canonical dashboard.html
 """
 
 from __future__ import annotations
@@ -31,10 +31,6 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 SCRIPTS = REPO / "skills" / "token-optimizer" / "scripts"
 ASSET = REPO / "skills" / "token-optimizer" / "assets" / "dashboard.html"
-ASSET_MIRROR = (
-    REPO / "plugins" / "token-optimizer" / "skills" / "token-optimizer"
-    / "assets" / "dashboard.html"
-)
 
 
 @pytest.fixture()
@@ -83,9 +79,9 @@ def test_runway_reflects_current_reading(measure, monkeypatch):
     assert p["runway"] == sentinel
 
 
-# ---- client wiring (edit-time string asserts, mirrored to the plugin tree) ----
+# ---- client wiring (edit-time string asserts) ----
 
-@pytest.mark.parametrize("asset", [ASSET, ASSET_MIRROR], ids=["canonical", "plugin-mirror"])
+@pytest.mark.parametrize("asset", [ASSET], ids=["canonical"])
 def test_client_patches_runway(asset):
     """refreshSavings must assign the live runway into data.runway so the repaint
     picks up the fresher reading."""
@@ -93,7 +89,7 @@ def test_client_patches_runway(asset):
     assert "data.runway = payload.runway" in html
 
 
-@pytest.mark.parametrize("asset", [ASSET, ASSET_MIRROR], ids=["canonical", "plugin-mirror"])
+@pytest.mark.parametrize("asset", [ASSET], ids=["canonical"])
 def test_client_has_periodic_poll(asset):
     """A periodic poll of the live endpoint must exist so the window auto-updates
     without a manual Regenerate."""

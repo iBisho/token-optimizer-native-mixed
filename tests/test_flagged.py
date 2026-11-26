@@ -6,9 +6,6 @@ Covers:
   (pythonw.exe/pyw.exe) proves the Store install real via POSITIVE PROOF OF
   LIFE (it must WRITE a marker file; its bare exit code is never trusted).
   The console --version probe remains the fallback correctness authority.
-* T6-M3 carry-forward: dashboard HTML writes in openclaw and opencode are
-  atomic (sibling temp file + rename), never truncate-in-place, and the
-  openclaw CLI reports a write failure cleanly instead of an uncaught throw.
 * commands/health.md and commands/quick.md route the non-Claude-Code
   (Codex/OpenCode/standalone) invocation through python-launcher.sh instead
   of a bare `python3` console spawn.
@@ -206,50 +203,6 @@ def test_candidate_probe_keeps_c6_timeout_semantics():
     assert 'timeout --kill-after=1s 2s "$binpath" --version' in src
     # The twin proof-of-life probe is gone (the launcher probe fix); never reference $twin.
     assert '"$twin" -c' not in src
-
-
-# ---------------------------------------------------------------------------
-# T6-M3: atomic dashboard writes (openclaw + opencode), clean CLI failure.
-# ---------------------------------------------------------------------------
-
-
-def test_openclaw_dashboard_write_is_atomic():
-    src = (REPO / "openclaw" / "src" / "dashboard.ts").read_text(encoding="utf-8")
-    body = src[src.index("export function writeDashboard") :]
-    body = body[: body.index("\n}") + 2]
-    assert "renameSync(tmpPath, DASHBOARD_PATH)" in body, (
-        "openclaw writeDashboard must rename a sibling temp file onto the "
-        "final path (atomic), not truncate-in-place"
-    )
-    assert "writeFileSync(DASHBOARD_PATH" not in body, (
-        "openclaw writeDashboard must never open the destination directly"
-    )
-    assert ".tmp.${process.pid}" in body, "temp file must be pid-suffixed"
-
-
-def test_openclaw_dist_carries_atomic_dashboard_write():
-    """The shipped dist must match src (rebuilt with the vendored tsc)."""
-    dist = (REPO / "openclaw" / "dist" / "dashboard.js").read_text(encoding="utf-8")
-    assert "fs.renameSync(tmpPath, DASHBOARD_PATH)" in dist
-    assert "fs.writeFileSync(DASHBOARD_PATH" not in dist
-
-
-def test_openclaw_cli_reports_dashboard_write_failure_cleanly():
-    """A Windows rename onto a locked destination must exit with a one-line
-    diagnostic, not an uncaught stack trace out of cmdDashboard."""
-    for rel in ("src/cli.ts", "dist/cli.js"):
-        text = (REPO / "openclaw" / rel).read_text(encoding="utf-8")
-        assert "Could not write dashboard" in text, f"missing catch in {rel}"
-
-
-def test_opencode_dashboard_write_is_atomic():
-    src = (REPO / "opencode" / "src" / "dashboard" / "generator.ts").read_text(
-        encoding="utf-8"
-    )
-    body = src[src.index("export function writeDashboard") :]
-    assert "renameSync(tmpPath, outputPath)" in body
-    assert "writeFileSync(outputPath, html" not in body
-    assert ".tmp.${process.pid}" in body
 
 
 # ---------------------------------------------------------------------------

@@ -140,17 +140,6 @@ def test_regen_reloads_on_success():
     assert "location.reload()" in body, "handler no longer reloads on success"
 
 
-def test_regen_contract_mirrored_to_plugin_tree():
-    """Both dashboard.html trees must carry the same retry contract."""
-    a = (ASSETS / "dashboard.html").read_text(encoding="utf-8")
-    b = (
-        ROOT
-        / "plugins" / "token-optimizer" / "skills" / "token-optimizer" / "assets"
-        / "dashboard.html"
-    ).read_text(encoding="utf-8")
-    assert a == b, "dashboard.html drifted between the two install trees"
-
-
 def test_job_status_is_polled_until_done():
     html = (ASSETS / 'dashboard.html').read_text(encoding='utf-8')
     start = html.index('  function waitForRegen(')

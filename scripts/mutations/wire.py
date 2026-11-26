@@ -15,8 +15,6 @@ UPS_RUNNER = "hooks/userpromptsubmit_runner.py"
 SS_RUNNER = "hooks/sessionstart_runner.py"
 STOP_RUNNER = "hooks/stop_runner.py"
 CLAUDE_HOOKS = "hooks/hooks.json"
-CODEX_PLUGIN_HOOKS = "plugins/token-optimizer/hooks/hooks.json"
-CODEX_PLUGIN_RUN = "plugins/token-optimizer/hooks/run.py"
 LAUNCHER = "hooks/python-launcher.sh"
 MEASURE = "skills/token-optimizer/scripts/measure.py"
 CLOUD_KIT = "skills/token-optimizer/scripts/cloud_kit.py"
@@ -65,23 +63,6 @@ MUTATIONS = [
      [("        for buf in _stdout_bufs:\n            sys.stdout.write(buf)",
        "        sys.stdout.write('[Token Optimizer] checkpoint saved\\n')\n"
        "        for buf in _stdout_bufs:\n            sys.stdout.write(buf)")]),
-    ("#81 (Codex plugin copy) SessionStart prints plain text instead of one JSON object",
-     [WIRE + "::test_session_start_speaks_valid_json_under_its_own_event[startup-codex-plugin]"],
-     "plugins/token-optimizer/" + SS_RUNNER,
-     [("        measure._emit_hook_stdout_envelope,\n        combined,\n        _envelope_event(hook_input),",
-       "        lambda text, _event: print(text),\n        combined,\n        _envelope_event(hook_input),")]),
-    ("#76 (Codex plugin copy) Stop hook exits 0 but prints a plain line",
-     [WIRE + "::test_stop_after_real_work_keeps_stdout_host_valid[codex-plugin]"],
-     "plugins/token-optimizer/" + STOP_RUNNER,
-     [("        for buf in _stdout_bufs:\n            sys.stdout.write(buf)",
-       "        sys.stdout.write('[Token Optimizer] checkpoint saved\\n')\n"
-       "        for buf in _stdout_bufs:\n            sys.stdout.write(buf)")]),
-    ("#83 async hook in the Codex-loaded manifest (Codex skips it)",
-     [WIRE + "::test_codex_loaded_manifests_carry_no_async_hooks"],
-     CODEX_PLUGIN_HOOKS,
-     [('checkpoint-trigger --milestone pre-fanout --quiet; done; exit 0",\n            "timeout": 20',
-       'checkpoint-trigger --milestone pre-fanout --quiet; done; exit 0",\n            "async": true,\n'
-       '            "timeout": 20')]),
     ("#80 hooks.json calls bare `bash` (PATH without bash -> exit 127)",
      [WIRE + "::test_hooks_run_when_path_has_no_bash[claude]"],
      CLAUDE_HOOKS,
@@ -122,11 +103,6 @@ MUTATIONS = [
      [WIRE + "::test_codex_global_hooks_survive_an_upgrade"],
      CODEX_INSTALL,
      [("f'R=\"$(ls -d {base}/*/ 2>/dev/null", "f'R=\"$(ls -d {base}/NONE/ 2>/dev/null")]),
-    ("Codex plugin: upgrade mid-session, run.py trusts the deleted CLAUDE_PLUGIN_ROOT and no-ops",
-     [WIRE + "::test_codex_plugin_hooks_survive_an_upgrade_mid_session"],
-     CODEX_PLUGIN_RUN,
-     [("    stale_plugin_root = bool(plugin_root) and not os.path.isdir(plugin_root)",
-       "    stale_plugin_root = False")]),
     ("#145 launcher rejects a user-owned version-manager python shim (mise)",
      [WIRE + "::test_version_manager_python_shim_is_the_interpreter_used[claude]"],
      LAUNCHER,
@@ -141,9 +117,4 @@ MUTATIONS = [
      UPS_RUNNER,
      [("                not _is_plugin\n                and not _qb_disabled", "                not _qb_disabled"),
       ("                    measure.setup_quality_bar(quiet=True)", "                    measure.setup_quality_bar()")]),
-    ("Codex plugin Stop: rollout transcript refused by a runtime-only confinement, no checkpoint (#253 class)",
-     [WIRE + "::test_checkpoint_hooks_really_write_the_checkpoint[codex-plugin]"],
-     "plugins/token-optimizer/skills/token-optimizer/scripts/_measure/continuity.py",
-     [("    if _measure_facade._use_codex_session_adapter(resolved):\n        try:\n            roots = [r.resolve() for r in _measure_facade.codex_session.session_roots()]",
-       "    if _measure_facade._use_codex_session_adapter():\n        try:\n            roots = [r.resolve() for r in _measure_facade.codex_session.session_roots()]")]),
 ]

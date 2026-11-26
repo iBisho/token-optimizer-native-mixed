@@ -48,15 +48,6 @@ def test_main_plugin_hooks_json_names_the_desktop_module():
     assert hooks["hooks"], "the classic hooks stay beside the module"
 
 
-def test_codex_and_cowork_builds_leave_the_module_out():
-    # Neither build ships desktop/, and neither harness loads hooks modules.
-    for hooks_json in (
-        REPO / "plugins" / "token-optimizer" / "hooks" / "hooks.json",
-        REPO / "cowork" / "token-optimizer" / "hooks" / "hooks.json",
-    ):
-        assert "modules" not in _load(hooks_json), f"{hooks_json.relative_to(REPO)} has a modules key"
-
-
 def test_main_manifest_declares_the_bars_state_types():
     # Claude Code's plugin validator requires every state key the module writes
     # to be declared in the types file the manifest names.
@@ -65,14 +56,12 @@ def test_main_manifest_declares_the_bars_state_types():
     assert path == (DESKTOP_DIR / "types" / "index.d.ts").resolve()
     assert path.is_file()
     assert _load(DESKTOP_MANIFEST)["types"] == "./types/index.d.ts"
-    # The Cowork build carries no bar, so no types pointer either.
-    assert "types" not in _load(REPO / "cowork" / "token-optimizer" / ".claude-plugin" / "plugin.json")
 
 
 def test_installing_token_optimizer_asks_for_no_settings():
     # Plugin options make Claude Code ask to configure them on install; the
     # bar's switches are environment variables instead.
-    for manifest in (ROOT_MANIFEST, REPO / "cowork" / "token-optimizer" / ".claude-plugin" / "plugin.json"):
+    for manifest in (ROOT_MANIFEST,):
         assert "userConfig" not in _load(manifest), f"{manifest.relative_to(REPO)} declares userConfig"
 
 

@@ -10,7 +10,6 @@ COPILOT = "skills/token-optimizer/scripts/copilot_install.py"
 LAUNCHER = "hooks/windows-launcher.py"
 CLAUDE_HOOKS = "hooks/hooks.json"
 M = "tests/test_codex_windows_shell_matrix_278.py"
-N = "tests/test_codex_shell_neutral_hooks_278.py"
 W = "tests/test_hook_wire_contract.py"
 C = "tests/test_copilot_windows_powershell_hook.py"
 P = "tests/test_windows_pid_liveness.py"
@@ -19,7 +18,6 @@ D = "tests/test_windows_dashboard_launcher_cmd.py"
 PL = "tests/test_python_launcher_windows_pythonw.py"
 PY_LAUNCHER = "hooks/python-launcher.sh"
 NP = "tests/test_python_launcher_no_python3_issue21.py"
-IS = "tests/test_install_sh_copilot_wsl_issue78.py"
 
 MUTATIONS = [
     ("#278 a $ % backtick or ! in the plugin path forces the cmd-only hook again",
@@ -63,8 +61,4 @@ MUTATIONS = [
      [NP + "::test_only_the_py_launcher_on_path_runs_py_dash_3"],
      PY_LAUNCHER,
      [('if pyl=$(find_interpreter "py"); then', "if false; then")]),
-    ("#78 install.sh --copilot under WSL root writes to /root/.copilot again",
-     [IS + "::test_wsl_root_targets_the_single_windows_profile"],
-     "install.sh",
-     [('            export "${export_as}=${guessed}"\n', "")]),
 ]

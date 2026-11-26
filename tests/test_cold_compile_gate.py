@@ -555,8 +555,7 @@ def _hook_args(command: str, target: str) -> list[str]:
 
 def _manifest_entries():
     out = []
-    for rel in ("hooks/hooks.json", "plugins/token-optimizer/hooks/hooks.json",
-                "cowork/token-optimizer/hooks/hooks.json"):
+    for rel in ("hooks/hooks.json",):
         data = json.loads((REPO / rel).read_text(encoding="utf-8"))
         for event, groups in data["hooks"].items():
             for group in groups:
@@ -577,12 +576,10 @@ def _manifest_entries():
     return out
 
 
-# Codex clamps every SessionEnd hook to 3 s (scripts/sync-codex-marketplace-
-# plugin.sh), less than any cold compile of measure.py, so a cold SessionEnd
-# was killed there before the gate as well. The gate makes it no worse: the
-# kill lands during the wait and the detached compile carries on warming the
-# cache. stop_runner cannot tell SessionEnd from Stop before reading stdin.
-_HOST_KILL_EXPECTED = {("plugins/token-optimizer/hooks/hooks.json", "SessionEnd")}
+# Manifest entries a host is known to kill before the gate's wait can finish.
+# The only one was the Codex plugin mirror's SessionEnd (clamped to 3 s), which
+# this Claude Code-only edition no longer ships.
+_HOST_KILL_EXPECTED: set = set()
 
 
 def test_every_gated_wait_leaves_room_under_the_host_timeout(monkeypatch):

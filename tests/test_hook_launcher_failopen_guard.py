@@ -20,8 +20,6 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 HOOKS_JSON_FILES = [
     REPO / "hooks" / "hooks.json",
-    REPO / "plugins" / "token-optimizer" / "hooks" / "hooks.json",
-    REPO / "cowork" / "token-optimizer" / "hooks" / "hooks.json",
 ]
 
 
@@ -62,7 +60,7 @@ def test_every_manifest_uses_runtime_resolver():
     version dir per call): Codex pins ${CLAUDE_PLUGIN_ROOT} to the session's
     plugin version, and a Claude Code update can delete the loaded version dir
     under a running session too (5.13.51)."""
-    for tree in ("plugins/token-optimizer/hooks", "hooks", "cowork/token-optimizer/hooks"):
+    for tree in ("hooks",):
         for cmd in _launcher_commands(REPO / tree / "hooks.json"):
             assert 'sort -V' in cmd and 'ls -d' in cmd, f"{tree} command lost its resolver:\n{cmd}"
 

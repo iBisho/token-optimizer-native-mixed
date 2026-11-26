@@ -128,12 +128,3 @@ def test_do_POST_does_not_log_reject_on_valid_token_path():
         f"expected exactly one call site (plus the def), found {call_sites - 1} "
         "calls -- a reject log on the valid-token path would be a false alarm"
     )
-
-
-def test_reject_logger_mirrored_to_plugin_tree():
-    """Both measure.py trees must carry the reject logger."""
-    a = _split_measure_source(SCRIPTS / "measure.py")
-    b = _split_measure_source(ROOT
-        / "plugins" / "token-optimizer" / "skills" / "token-optimizer" / "scripts"
-        / "measure.py")
-    assert a == b, "measure.py drifted between the two install trees"
