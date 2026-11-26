@@ -224,6 +224,11 @@ _CODEX = {}  # path key -> _use_codex_session_adapter(path); it resolves the pat
 def _job(f, kind, path, window_start=None, window_end=None):
     """(job key, stat) for an eligible transcript, else None."""
     key = native_index._key(path)
+    if kind == "product":  # transcript_product.scan: every file, any size
+        try:
+            return ("product", key, "", "", ""), os.stat(key)
+        except OSError:
+            return None
     codex = _CODEX.get(key)
     if codex is None:
         codex = _CODEX[key] = bool(f._use_codex_session_adapter(path))
@@ -317,6 +322,10 @@ def prepare_session(paths, window_start=None, window_end=None):
     return _prepare("session", paths, window_start, window_end)
 
 
+def prepare_product(paths):
+    return _prepare("product", paths)
+
+
 # ---- results -----------------------------------------------------------------
 
 def _result(f, kind, path, window_start=None, window_end=None):
@@ -340,6 +349,14 @@ def turns(filepath):
     """parse_session_turns(filepath) when prepared, else MISS."""
     try:
         return _result(_facade(), "turns", filepath)
+    except Exception:
+        return MISS
+
+
+def product(filepath):
+    """transcript_product events of filepath when prepared, else MISS."""
+    try:
+        return _result(_facade(), "product", filepath)
     except Exception:
         return MISS
 

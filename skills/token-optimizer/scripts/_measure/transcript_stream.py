@@ -168,15 +168,54 @@ def needs_resume(path):
         return False
 
 
+_FULL_LINES = {}  # fork: resolved path -> ((size, mtime_ns), lines of a fully indexed file)
+
+
+def _memo_lines(path, read_records, stat):
+    """fork: _indexed_lines output for a fully indexed, unchanged file.
+
+    A dashboard regen reads the same large transcript through the index many
+    times; each read re-encodes every record. Once the index covers the whole
+    file (another pass reads nothing new), the lines depend only on the file,
+    so they are kept for as long as its size and mtime stay the same.
+    """
+    import os
+    if os.environ.get('TOKEN_OPTIMIZER_NATIVE_INDEX', '1') == '0':
+        return None
+    key = str(Path(path).resolve())
+    stamp = (stat.st_size, stat.st_mtime_ns)
+    entry = _FULL_LINES.get(key)
+    if entry is not None and entry[0] == stamp:
+        return entry[1]
+    values, info = read_records(path)
+    try:
+        lines = [json.dumps(value, ensure_ascii=False, separators=(',', ':')) + '\n' for value in values]
+    finally:
+        values.close()
+    after = Path(path).stat()
+    if info.get('indexed_bytes') == info.get('source_bytes') == stat.st_size and (after.st_size, after.st_mtime_ns) == stamp:
+        _FULL_LINES[key] = (stamp, lines)
+    return lines
+
+
+@contextmanager
+def _listed_lines(lines):
+    yield iter(lines)
+
+
 def open_transcript(path, *args, **kwargs):
     """Text-line interface for existing metrics, sharing the same projection."""
-    if Path(path).stat().st_size > LARGE_BYTES:
+    stat = Path(path).stat()
+    if stat.st_size > LARGE_BYTES:
         try:
             from codex_session import is_codex_session_path
             if is_codex_session_path(path):
                 from codex_log_index import records as read_records
             else:
                 read_records = records
+            lines = _memo_lines(path, read_records, stat)
+            if lines is not None:
+                return _listed_lines(lines)
             values, _ = read_records(path)
         except sqlite3.Error as exc:
             raise OSError('transcript index unavailable') from exc

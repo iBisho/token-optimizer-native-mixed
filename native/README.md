@@ -85,13 +85,29 @@ parsers spent 70% of their time decoding and collecting garbage (7 s for
 the strict `encoding/json` validator, and duplicate keys resolve to the last
 one, as `json.loads` does (fastjson's own `Get` returns the first).
 
+`transcript_product.scan` (skill-listing budget and unused connectors) gets
+the same treatment in `product.go`: Go does the per-line work (tag filter,
+parse, type checks) and returns, per record that matters, only the values
+`scan` reads (timestamp, listing length, delta names and lengths, MCP tool
+names and call ids); `scan` replays them through its own logic. 24 s of
+parsing for 30 days becomes about 1 s.
+
 Anything outside the shapes Go reproduces exactly (timestamps not written as
 `YYYY-MM-DDTHH:MM:SS[.fff](Z|±HH:MM)`, numbers stored as strings, lone
 surrogate escapes, integers beyond 2^53, non-string ids, a rate card that
 fails its self-check) makes Go report `fallback` for that file and the
 original Python code computes it.
 
-### 3. Process table (`toidx procs`)
+### 3. Transcripts over 96 MB (Python only)
+
+Upstream reads these through an incremental SQLite index, and every read
+re-encodes each indexed record as a JSON line; a regen reads the same large
+transcript many times (one 101 MB session cost about 25 s per regen).
+`transcript_stream.open_transcript` now keeps those lines in memory once the
+index covers the whole file, for as long as the file's size and mtime stay
+the same. The lines are the ones upstream would produce.
+
+### 4. Process table (`toidx procs`)
 
 `toidx procs get-process claude | cim claude | names` prints the same CSV
 columns (and row order) the PowerShell pipelines printed, read with
@@ -128,6 +144,7 @@ rebuild it after changing the Go code.
 ```powershell
 python native/tests/equivalence.py 30
 python native/tests/compute_equivalence.py 30
+python native/tests/product_equivalence.py 30
 python native/tests/compare_dashboard.py
 ```
 
@@ -135,6 +152,8 @@ python native/tests/compare_dashboard.py
 - `compute_equivalence.py`: the native parsers against the untouched Python
   parsers reading raw files, for whole files and two time windows, with
   strict equality (types such as `0` vs `0.0`, and dict key order).
+- `product_equivalence.py`: `transcript_product.scan` native against
+  upstream, for the whole window and each session alone.
 - `compare_dashboard.py`: the whole dashboard data, native off vs on (values
   that move between two runs, such as timestamps and live sessions, differ).
 
@@ -151,7 +170,10 @@ between the two reads; the tests retry those.
 - `_measure/dashboard.py`: one batch prepare at the start of a regen.
 - `_measure/cache_policy.py`: `_get_cache_ttl_waste` prepares `turns`.
 - `_measure/weekly_activity.py`: `price` prepares its windowed pass.
-- `_measure/transcript_product.py`: `scan` warms and reads `product`.
+- `_measure/transcript_product.py`: `scan` replays native events, else reads
+  the `product` projection.
+- `_measure/transcript_stream.py`: `open_transcript` keeps the lines of a
+  fully indexed large transcript.
 - `_measure/nudge_followthrough.py`: `_project_index` warms, `_rows` reads `nudge`.
 - `_measure/daemon.py`: `_native_procs_csv` replaces the three PowerShell calls.
 
@@ -166,6 +188,7 @@ git fetch upstream
 git merge upstream/main
 python native/tests/equivalence.py 30
 python native/tests/compute_equivalence.py 30
+python native/tests/product_equivalence.py 30
 ```
 
 Conflicts can only happen in the files listed above. When upstream changes a

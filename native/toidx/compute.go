@@ -459,7 +459,7 @@ func header(j computeJob, status string, extra obj) []byte {
 }
 
 func computeOne(ctx *computeCtx, cacheDir string, j computeJob, p *fastjson.Parser) (line []byte) {
-	profName := map[string]string{"turns": "turns", "session": "session"}[j.kind]
+	profName := map[string]string{"turns": "turns", "session": "session", "product": "product"}[j.kind]
 	if profName == "" {
 		return header(j, "fallback", obj{{"reason", jsonStr("unknown kind")}})
 	}
@@ -467,7 +467,8 @@ func computeOne(ctx *computeCtx, cacheDir string, j computeJob, p *fastjson.Pars
 	if err != nil {
 		return header(j, "fallback", obj{{"reason", jsonStr("stat")}})
 	}
-	if st.Size() > largeBytes {
+	// transcript_product.scan reads every transcript itself, whatever its size.
+	if j.kind != "product" && st.Size() > largeBytes {
 		return header(j, "fallback", obj{{"reason", jsonStr("large transcript")}})
 	}
 	dir := filepath.Join(cacheDir, profName, fmt.Sprintf("v%d", formatVersion))
@@ -497,11 +498,13 @@ func computeOne(ctx *computeCtx, cacheDir string, j computeJob, p *fastjson.Pars
 			line = header(j, "fallback", obj{{"reason", jsonStr(reason)}})
 		}
 	}()
-	lines := projectionLines(f, p)
-	if j.kind == "turns" {
-		result = computeTurns(js, lines)
-	} else {
-		result = computeSession(js, lines, j)
+	switch j.kind {
+	case "turns":
+		result = computeTurns(js, projectionLines(f, p))
+	case "product":
+		result = computeProduct(projectionRawLines(f, p))
+	default:
+		result = computeSession(js, projectionLines(f, p), j)
 	}
 	if len(js.missing) > 0 {
 		names := make([]string, 0, len(js.missing))
@@ -525,6 +528,17 @@ func computeOne(ctx *computeCtx, cacheDir string, j computeJob, p *fastjson.Pars
 // verbatim copy of something uncertain: Python must handle the whole file.
 func projectionLines(f *os.File, p *fastjson.Parser) func(yield func(val) bool) {
 	return func(yield func(val) bool) {
+		for _, v := range projectionRawLines(f, p) {
+			if !yield(v) {
+				return
+			}
+		}
+	}
+}
+
+// projectionRawLines is projectionLines that also yields the line bytes.
+func projectionRawLines(f *os.File, p *fastjson.Parser) func(yield func([]byte, val) bool) {
+	return func(yield func([]byte, val) bool) {
 		r := bufio.NewReaderSize(f, 1<<20)
 		for {
 			b, err := r.ReadSlice('\n')
@@ -542,7 +556,7 @@ func projectionLines(f *os.File, p *fastjson.Parser) func(yield func(val) bool) 
 				if perr != nil || v.Type() != fastjson.TypeObject {
 					fb("unparsed projection line")
 				}
-				if !yield(v) {
+				if !yield(b, v) {
 					return
 				}
 			}

@@ -39,15 +39,47 @@ def scan(paths, budget=None, now=None, days=30):
     incomplete = False
     paths = [Path(p) for p in paths]
     groups = [[path] + sorted((path.parent / path.stem / 'subagents').glob('*.jsonl')) for path in paths]
-    try:  # fork: one native pass projects every stale transcript (see native_index.py)
-        from . import native_index
+    try:  # fork: native extraction and projections (see native_compute.py, native_index.py)
+        from . import native_compute, native_index
+        native_compute.prepare_product([f for group in groups for f in group])
         native_index.warm([f for group in groups for f in group], 'product')
     except ImportError:
-        native_index = None
+        native_compute = native_index = None
     for path, files in zip(paths, groups):
         tools, instructions = {}, {}
         have_listing = False
         for source in files:
+            events = native_compute.product(source) if native_compute else None
+            if isinstance(events, list):
+                # fork: the records below, already parsed and checked natively
+                # (native/toidx/product.go); same logic as the reader loop.
+                for ts, kind, data, uses in events:
+                    stamp = _time(ts)
+                    recent = stamp is not None and now - timedelta(days=7) <= stamp <= now
+                    if source == path and recent and not have_listing and kind == 'skill_listing' and data is not None:
+                        listing.append((data[0], data[1]))
+                        have_listing = True
+                    if source == path and recent and kind in ('deferred_tools_delta', 'mcp_instructions_delta'):
+                        target = tools if kind == 'deferred_tools_delta' else instructions
+                        for name in data[0]:
+                            target.pop(name, None)
+                        if kind == 'deferred_tools_delta':
+                            for name, size in data[1]:
+                                if _server(name):
+                                    target[name] = size
+                        elif not data[2]:
+                            for name, size in data[1]:
+                                target[name] = size
+                        else:
+                            incomplete = True
+                    for name, call_id in uses:
+                        server = _server(name)
+                        if server and (stamp is None or cutoff <= stamp <= now):
+                            if not call_id or call_id not in seen_calls:
+                                used.add(_normalize(server))
+                            if call_id:
+                                seen_calls.add(call_id)
+                continue
             try:
                 opened = native_index.source(source, 'product') if native_index else source
                 with opened.open(encoding='utf-8', errors='replace') as stream:
